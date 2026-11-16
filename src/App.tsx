@@ -66,6 +66,10 @@ export default function App() {
   const [time, setTime] = useState('')
   const [priority, setPriority] = useState<Priority>('Média')
   const [statusFilter, setStatusFilter] = useState('Todos')
+  const [categoryFilter, setCategoryFilter] = useState('Todas')
+  const [priorityFilter, setPriorityFilter] = useState('Todas')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [search, setSearch] = useState('')
   const [mobileOpen, setMobileOpen] = useState(false)
   const [notice, setNotice] = useState('')
@@ -323,7 +327,15 @@ export default function App() {
     setNotice('Você saiu da sua conta. O acesso off-line desta sessão foi encerrado.')
   }
 
-  const visibleTasks = useMemo(() => tasks.filter(t => (statusFilter === 'Todos' || t.status === statusFilter) && (t.title.toLowerCase().includes(search.toLowerCase()) || t.category.toLowerCase().includes(search.toLowerCase()))), [tasks,statusFilter,search])
+  const visibleTasks = useMemo(() => tasks.filter(t =>
+    (statusFilter === 'Todos' || t.status === statusFilter) &&
+    (categoryFilter === 'Todas' || t.category === categoryFilter) &&
+    (priorityFilter === 'Todas' || t.priority === priorityFilter) &&
+    (!dateFrom || t.due_date >= dateFrom) && (!dateTo || t.due_date <= dateTo) &&
+    (t.title.toLowerCase().includes(search.toLowerCase()) || t.category.toLowerCase().includes(search.toLowerCase()) || (t.description ?? '').toLowerCase().includes(search.toLowerCase()))
+  ), [tasks,statusFilter,categoryFilter,priorityFilter,dateFrom,dateTo,search])
+  const overdueTasks = tasks.filter(t => t.status !== 'Concluído' && t.due_date < today())
+  const clearTaskFilters = () => { setStatusFilter('Todos'); setCategoryFilter('Todas'); setPriorityFilter('Todas'); setDateFrom(''); setDateTo(''); setSearch('') }
   const nav = [
     { id: 'agenda' as const, label: 'Minha Agenda', icon: CalendarDays },
     { id: 'visitas' as const, label: 'Visitas à Cemig', icon: ClipboardList },
@@ -361,6 +373,7 @@ export default function App() {
             <div className="stat-card"><span>A fazer</span><strong>{tasks.filter(t => t.status === 'A fazer').length}</strong><AlertCircle/></div>
             <div className="stat-card"><span>Em andamento</span><strong>{tasks.filter(t => t.status === 'Em andamento').length}</strong><Clock3/></div>
             <div className="stat-card"><span>Concluídas</span><strong>{tasks.filter(t => t.status === 'Concluído').length}</strong><CheckCircle2/></div>
+            <div className="stat-card overdue-stat"><span>Atrasadas</span><strong>{overdueTasks.length}</strong><AlertCircle/></div>
           </div>
           <section className="panel">
             <div className="panel-heading"><div><h2>Adicionar atividade</h2><p>Cadastre uma nova obrigação ou lembrete.</p></div><span className="soft-tag">NOVA TAREFA</span></div>
@@ -375,9 +388,10 @@ export default function App() {
             </form>
           </section>
           <section className="panel">
-            <div className="panel-heading list-heading"><div><h2>Suas atividades</h2><p>As atividades ficam salvas na sua conta.</p></div><label className="filter"><Search size={15}/><select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option>Todos</option><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select></label></div>
-            <div className="search-line"><Search size={15}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por atividade ou categoria..."/></div>
-            {loadingTasks ? <div className="empty"><LoaderCircle className="spin"/><span>Carregando atividades...</span></div> : visibleTasks.length === 0 ? <div className="empty"><CalendarDays size={28}/><strong>Nenhuma atividade por aqui</strong><span>Adicione uma atividade acima para começar.</span></div> : <div className="task-list">{visibleTasks.map(task => <div className="task-row" key={task.id}><div className="task-dot" style={{background: categories.find(c => c[0] === task.category)?.[1]}}/><div className="task-info"><strong>{task.title}</strong><span>{task.category} · {new Date(`${task.due_date}T12:00:00`).toLocaleDateString('pt-BR')}{task.due_time ? ` · ${task.due_time.slice(0,5)}` : ''} · Prioridade {task.priority}</span>{task.description && <small>{task.description}</small>}</div><select aria-label={`Status de ${task.title}`} value={task.status} onChange={e => changeStatus(task.id, e.target.value as TaskStatus)}><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select><button className="icon-button" onClick={() => deleteTask(task.id)} title="Arquivar atividade"><Trash2 size={15}/></button></div>)}</div>}
+            <div className="panel-heading list-heading"><div><h2>Suas atividades</h2><p>As atividades ficam salvas na sua conta.</p></div><label className="filter">Status<select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option>Todos</option><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select></label></div>
+            <div className="search-line"><Search size={15}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por atividade, descrição ou categoria..."/></div>
+            <div className="task-filters"><label>Categoria<select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}><option>Todas</option>{categories.map(c => <option key={c[0]}>{c[0]}</option>)}</select></label><label>Prioridade<select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}><option>Todas</option><option>Baixa</option><option>Média</option><option>Alta</option><option>Urgente</option></select></label><label>De<input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}/></label><label>Até<input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)}/></label><button type="button" className="secondary-button" onClick={clearTaskFilters}>Limpar filtros</button></div>
+            {loadingTasks ? <div className="empty"><LoaderCircle className="spin"/><span>Carregando atividades...</span></div> : visibleTasks.length === 0 ? <div className="empty"><CalendarDays size={28}/><strong>Nenhuma atividade por aqui</strong><span>Adicione uma atividade acima para começar.</span></div> : <div className="task-list">{visibleTasks.map(task => <div className={'task-row ' + (task.status !== 'Concluído' && task.due_date < today() ? 'task-overdue' : '')} key={task.id}><div className="task-dot" style={{background: categories.find(c => c[0] === task.category)?.[1]}}/><div className="task-info"><strong>{task.title}</strong><span>{task.category} · {new Date(`${task.due_date}T12:00:00`).toLocaleDateString('pt-BR')}{task.due_time ? ` · ${task.due_time.slice(0,5)}` : ''} · Prioridade {task.priority}</span>{task.description && <small>{task.description}</small>}</div><select aria-label={`Status de ${task.title}`} value={task.status} onChange={e => changeStatus(task.id, e.target.value as TaskStatus)}><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select><button className="icon-button" onClick={() => deleteTask(task.id)} title="Arquivar atividade"><Trash2 size={15}/></button></div>)}</div>}
           </section>
         </>}
         {section === 'visitas' && <>
