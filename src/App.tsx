@@ -24,6 +24,7 @@ const categories = [
   ['Gerador', '#D9DDE3'], ['Auditoria Clientes Cemig', '#E8D2BD'],
   ['Impressão Cemig', '#C9CCF0'], ['Reunião', '#F2C4C4'],
   ['Cliente Wege / Smartben', '#BFDCD5'], ['Cliente Transferencia', '#E8C7EA'],
+  ['Cliente', '#D7E8B5'],
 ] as const
 const today = () => { const d = new Date(); return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-') }
 
