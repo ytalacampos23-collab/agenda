@@ -160,7 +160,11 @@ export default function App() {
           setSyncFailed(false)
         }
       } catch (e) {
-        if (!cancelled) { setSyncFailed(true); setError('Sincronização pendente. Seus dados continuam salvos neste dispositivo. ' + (e instanceof Error ? e.message : '')) }
+        const syncError = e as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown; status?: unknown }
+        const reasonParts = [syncError?.message, syncError?.details, syncError?.hint, syncError?.code ? 'Código: ' + String(syncError.code) : null, syncError?.status ? 'Status: ' + String(syncError.status) : null]
+          .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+        const reason = reasonParts.join(' | ') || (typeof e === 'string' ? e : 'Não foi possível obter os detalhes do erro.')
+        if (!cancelled) { setSyncFailed(true); setError('Sincronização pendente. Seus dados continuam salvos neste dispositivo. Motivo: ' + reason) }
       } finally { if (!cancelled) setSyncing(false) }
     }
     void sync()
