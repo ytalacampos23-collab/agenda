@@ -53,3 +53,5 @@
 .priority-baixa{background:#ffead7;color:#a85a16}
 .priority-media{background:#fff176;color:#725900;border:1px solid #e6cf45}
 .priority-alta,.priority-urgente{background:#fde1df;color:#b52f2b}
+
+.list-filter-group{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}.list-filter-group .filter{white-space:nowrap}.list-filter-group .filter select{max-width:155px}@media(max-width:900px){.list-heading{align-items:flex-start;flex-direction:column;gap:12px}.list-filter-group{justify-content:flex-start;width:100%}}
