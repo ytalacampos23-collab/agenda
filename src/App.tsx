@@ -43,6 +43,7 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [visits, setVisits] = useState<Visit[]>([])
   const [visitTopics, setVisitTopics] = useState<VisitTopic[]>([])
+  const [historyEvents, setHistoryEvents] = useState<Array<{id:string; created_at:string; event_type:string; old_value:any; new_value:any; entity_type:'Atividade'|'Assunto'}>>([])
   const [selectedVisitId, setSelectedVisitId] = useState('')
   const [visitDate, setVisitDate] = useState(today())
   const [visitTitle, setVisitTitle] = useState('Visita à Cemig')
@@ -133,6 +134,10 @@ export default function App() {
           const [visitResult, topicResult] = await Promise.all([supabase!.from('visits').select('*').order('visit_date', { ascending: false }), supabase!.from('visit_topics').select('*').order('created_at', { ascending: true })])
           if (visitResult.error) throw visitResult.error
           if (topicResult.error) throw topicResult.error
+          const [taskHistory, topicHistory] = await Promise.all([supabase!.from('task_events').select('id,created_at,event_type,old_value,new_value').order('created_at',{ascending:false}).limit(100), supabase!.from('visit_topic_events').select('id,created_at,event_type,old_value,new_value').order('created_at',{ascending:false}).limit(150)])
+          if (taskHistory.error) throw taskHistory.error
+          if (topicHistory.error) throw topicHistory.error
+          setHistoryEvents([...(taskHistory.data ?? []).map(e => ({...e,entity_type:'Atividade' as const})), ...(topicHistory.data ?? []).map(e => ({...e,entity_type:'Assunto' as const}))].sort((a,b) => b.created_at.localeCompare(a.created_at)))
           setVisits((visitResult.data ?? []) as Visit[]); saveVisitsCache(userId, (visitResult.data ?? []) as Visit[])
           setVisitTopics((topicResult.data ?? []) as VisitTopic[]); saveTopicsCache(userId, (topicResult.data ?? []) as VisitTopic[])
           setPendingCount(readJson<PendingChange[]>(queueKey(userId), []).length + readJson<PendingVisitChange[]>(visitQueueKey(userId), []).length)
@@ -339,7 +344,7 @@ export default function App() {
             {visitTopics.filter(t => t.visit_id === selectedVisitId && (topicFilter === 'Todos' || t.status === topicFilter)).length === 0 ? <div className="empty"><strong>Nenhum assunto cadastrado nesta ata</strong><span>Adicione um assunto no formulário acima.</span></div> : <div className="task-list">{visitTopics.filter(t => t.visit_id === selectedVisitId && (topicFilter === 'Todos' || t.status === topicFilter)).map(topic => <div className="topic-row" key={topic.id}><div className="task-info"><strong>{topic.title}</strong><span>{topic.responsible ? 'Responsável: ' + topic.responsible + ' · ' : ''}{topic.protocol ? 'Protocolo: ' + topic.protocol + ' · ' : ''}{topic.due_date ? 'Prazo: ' + new Date(topic.due_date + 'T12:00:00').toLocaleDateString('pt-BR') : 'Sem prazo'}</span>{topic.description && <small>{topic.description}</small>}{topic.observations && <small>Observações: {topic.observations}</small>}</div><select aria-label={'Status de ' + topic.title} value={topic.status} onChange={e => changeTopicStatus(topic.id, e.target.value as VisitTopic['status'])}><option>Pendente</option><option>Em análise</option><option>Resolvido</option><option>Não se aplica</option></select></div>)}</div>}
           </section>}
         </>}
-        {section === 'historico' && <section className="panel coming"><div className="coming-icon"><History size={28}/></div><h2>Histórico de movimentações</h2><p>O banco já registra automaticamente as alterações de status e de dados das atividades. A tela de consulta do histórico será ligada na próxima etapa.</p></section>}
+        {section === 'historico' && <section className="panel"><div className="panel-heading"><div><h2>Histórico de movimentações</h2><p>Últimas alterações registradas nas atividades e nos assuntos das atas.</p></div><span className="soft-tag">{historyEvents.length} REGISTRO(S)</span></div>{historyEvents.length === 0 ? <div className="empty"><History size={28}/><strong>Nenhuma movimentação encontrada</strong><span>As próximas inclusões e alterações aparecerão aqui após a sincronização.</span></div> : <div className="history-list">{historyEvents.map(event => { const value = event.new_value ?? {}; const old = event.old_value ?? {}; const label = event.event_type === 'created' ? 'Criado' : event.event_type === 'status_changed' ? 'Status alterado' : event.event_type === 'schedule_changed' ? 'Data ou horário alterado' : 'Dados atualizados'; const detail = event.event_type === 'status_changed' ? `${old.status ?? '—'} → ${value.status ?? '—'}` : event.event_type === 'schedule_changed' ? `${old.date ?? '—'} ${old.time ?? ''} → ${value.date ?? '—'} ${value.time ?? ''}` : (value.title ?? old.title ?? 'Registro atualizado'); return <article className="history-item" key={event.id}><span className="history-marker"/><div className="history-copy"><div><strong>{detail}</strong><span className="history-kind">{event.entity_type} · {label}</span></div><time>{new Date(event.created_at).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})}</time></div></article> })}</div>}</section>}
         <footer>Watt-Wise <span>•</span> Em desenvolvimento</footer>
       </div>
     </main>
