@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, ClipboardList, History, Plus, Search, FileDown, ShieldCheck, Menu, X, CheckCircle2, Clock3, AlertCircle, ChevronDown, ChevronLeft, ChevronRight, LogOut, LoaderCircle, Trash2, Pencil } from 'lucide-react'
 import { hasSupabaseConfig, supabase } from './lib/supabase'
 
@@ -53,6 +53,19 @@ export default function App() {
   const [visitTitle, setVisitTitle] = useState('Visita à Cemig')
   const [participants, setParticipants] = useState('')
   const [visitNotes, setVisitNotes] = useState('')
+  const visitNotesRef = useRef<HTMLTextAreaElement>(null)
+  const editVisitNotesRef = useRef<HTMLTextAreaElement>(null)
+  function applyBoldToNotes(ref: { current: HTMLTextAreaElement | null }, value: string, update: (value: string) => void) {
+    const field = ref.current
+    if (!field) return
+    const start = field.selectionStart
+    const end = field.selectionEnd
+    const selected = value.slice(start, end)
+    const replacement = selected ? '**' + selected + '**' : '****'
+    const next = value.slice(0, start) + replacement + value.slice(end)
+    update(next)
+    requestAnimationFrame(() => { field.focus(); const cursorStart = selected ? start : start + 2; const cursorEnd = selected ? start + replacement.length : cursorStart; field.setSelectionRange(cursorStart, cursorEnd) })
+  }
   const [topicCategory, setTopicCategory] = useState('Troca de titularidade')
   const [topicTitle, setTopicTitle] = useState('')
   const [topicDescription, setTopicDescription] = useState('')
@@ -564,7 +577,7 @@ export default function App() {
               <label>Data da visita<input type="date" required value={visitDate} onChange={e => setVisitDate(e.target.value)}/></label>
               <label className="wide">Título da ata<input required value={visitTitle} onChange={e => setVisitTitle(e.target.value)}/></label>
               <label className="wide">Participantes<input value={participants} onChange={e => setParticipants(e.target.value)} placeholder="Nomes dos participantes"/></label>
-              <label className="wide notes-field">Observações gerais<textarea rows={7} value={visitNotes} onChange={e => setVisitNotes(e.target.value)} placeholder="Registre aqui todas as informações importantes da visita..."/></label>
+              <label className="wide notes-field">Observações gerais<div className="notes-toolbar"><button type="button" className="format-button" onClick={() => applyBoldToNotes(visitNotesRef, visitNotes, setVisitNotes)}><strong>B</strong> Negrito</button><small>Selecione um trecho e clique para destacar.</small></div><textarea ref={visitNotesRef} rows={7} value={visitNotes} onChange={e => setVisitNotes(e.target.value)} placeholder="Registre aqui todas as informações importantes da visita..."/></label>
               <div className="wide form-action"><button className="primary-button"><Plus size={17}/>Salvar visita</button></div>
             </form>
           </section>
@@ -578,7 +591,7 @@ export default function App() {
               <label>Data da visita<input type="date" required value={editingVisit.visit_date} onChange={e => setEditingVisit({ ...editingVisit, visit_date: e.target.value })}/></label>
               <label className="wide">Título da ata<input required value={editingVisit.title} onChange={e => setEditingVisit({ ...editingVisit, title: e.target.value })}/></label>
               <label className="wide">Participantes<input value={editingVisit.participants ?? ''} onChange={e => setEditingVisit({ ...editingVisit, participants: e.target.value })}/></label>
-              <label className="wide notes-field">Observações gerais<textarea rows={7} value={editingVisit.notes ?? ''} onChange={e => setEditingVisit({ ...editingVisit, notes: e.target.value })}/></label>
+              <label className="wide notes-field">Observações gerais<div className="notes-toolbar"><button type="button" className="format-button" onClick={() => applyBoldToNotes(editVisitNotesRef, editingVisit.notes ?? '', value => setEditingVisit({ ...editingVisit, notes: value }))}><strong>B</strong> Negrito</button><small>Selecione um trecho e clique para destacar.</small></div><textarea ref={editVisitNotesRef} rows={7} value={editingVisit.notes ?? ''} onChange={e => setEditingVisit({ ...editingVisit, notes: e.target.value })}/></label>
               <div className="wide edit-actions"><button className="primary-button" type="submit">Salvar alterações</button><button className="secondary-button" type="button" onClick={() => setEditingVisit(null)}>Cancelar</button></div>
             </form>}
             <form className="form-grid" onSubmit={addVisitTopic}>
