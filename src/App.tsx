@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { CalendarDays, ClipboardList, History, Plus, Search, FileDown, ShieldCheck, Menu, X, CheckCircle2, Clock3, AlertCircle, ChevronDown, LogOut, LoaderCircle, Trash2 } from 'lucide-react'
+import { CalendarDays, ClipboardList, History, Plus, Search, FileDown, ShieldCheck, Menu, X, CheckCircle2, Clock3, AlertCircle, ChevronDown, ChevronLeft, ChevronRight, LogOut, LoaderCircle, Trash2, Pencil } from 'lucide-react'
 import { hasSupabaseConfig, supabase } from './lib/supabase'
 
 type TaskStatus = 'A fazer' | 'Em andamento' | 'Concluído'
@@ -71,6 +71,9 @@ export default function App() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [search, setSearch] = useState('')
+  const [editingTask, setEditingTask] = useState<Task | null>(null)
+  const [calendarView, setCalendarView] = useState<'month' | 'week' | 'day'>('month')
+  const [calendarDate, setCalendarDate] = useState(today())
   const [mobileOpen, setMobileOpen] = useState(false)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
@@ -232,6 +235,15 @@ export default function App() {
     setTasks(nextTasks); saveTaskCache(userId, nextTasks)
     setNotice(isOnline ? 'Atividade arquivada. Sincronização iniciada.' : 'Atividade arquivada neste dispositivo e aguardando sincronização.')
   }
+  function saveEditedTask(event: FormEvent) {
+    event.preventDefault()
+    if (!editingTask || !editingTask.title.trim()) return
+    const updated = { ...editingTask, title: editingTask.title.trim(), description: editingTask.description?.trim() || null }
+    const next = tasks.map(item => item.id === updated.id ? updated : item).sort((a,b) => a.due_date.localeCompare(b.due_date))
+    setTasks(next); saveTaskCache(userId, next); queueChange(updated)
+    setEditingTask(null)
+    setNotice(isOnline ? 'Atividade editada e enviada para sincronização.' : 'Atividade editada neste dispositivo. Será sincronizada quando a internet voltar.')
+  }
 
   function addVisit(event: FormEvent) {
     event.preventDefault()
@@ -336,6 +348,27 @@ export default function App() {
   ), [tasks,statusFilter,categoryFilter,priorityFilter,dateFrom,dateTo,search])
   const overdueTasks = tasks.filter(t => t.status !== 'Concluído' && t.due_date < today())
   const clearTaskFilters = () => { setStatusFilter('Todos'); setCategoryFilter('Todas'); setPriorityFilter('Todas'); setDateFrom(''); setDateTo(''); setSearch('') }
+  const calendarStart = (() => {
+    const d = new Date(calendarDate + 'T12:00:00')
+    if (calendarView === 'day') return d
+    if (calendarView === 'week') { const offset = (d.getDay() + 6) % 7; d.setDate(d.getDate() - offset); return d }
+    d.setDate(1); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d
+  })()
+  const calendarDays = Array.from({length: calendarView === 'month' ? 42 : calendarView === 'week' ? 7 : 1}, (_,i) => {
+    const d = new Date(calendarStart); d.setDate(d.getDate() + i); return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')
+  })
+  const moveCalendar = (direction: number) => {
+    const d = new Date(calendarDate + 'T12:00:00')
+    if (calendarView === 'month') d.setMonth(d.getMonth() + direction)
+    else d.setDate(d.getDate() + (calendarView === 'week' ? 7 : 1) * direction)
+    setCalendarDate([d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-'))
+  }
+  const calendarHeading = calendarView === 'day'
+    ? new Date(calendarDate + 'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'})
+    : calendarView === 'week'
+      ? new Date(calendarDays[0] + 'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}) + ' – ' + new Date(calendarDays[6] + 'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'})
+      : new Date(calendarDate + 'T12:00:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'})
+
   const nav = [
     { id: 'agenda' as const, label: 'Minha Agenda', icon: CalendarDays },
     { id: 'visitas' as const, label: 'Visitas à Cemig', icon: ClipboardList },
@@ -389,9 +422,11 @@ export default function App() {
           </section>
           <section className="panel">
             <div className="panel-heading list-heading"><div><h2>Suas atividades</h2><p>As atividades ficam salvas na sua conta.</p></div><label className="filter">Status<select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option>Todos</option><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select></label></div>
+            <div className="calendar-toolbar"><div className="calendar-modes"><button type="button" className={calendarView === 'month' ? 'active' : ''} onClick={() => setCalendarView('month')}>Mês</button><button type="button" className={calendarView === 'week' ? 'active' : ''} onClick={() => setCalendarView('week')}>Semana</button><button type="button" className={calendarView === 'day' ? 'active' : ''} onClick={() => setCalendarView('day')}>Dia</button></div><div className="calendar-navigation"><button type="button" onClick={() => moveCalendar(-1)} aria-label="Período anterior"><ChevronLeft size={16}/></button><strong>{calendarHeading}</strong><button type="button" onClick={() => moveCalendar(1)} aria-label="Próximo período"><ChevronRight size={16}/></button><button type="button" onClick={() => setCalendarDate(today())}>Hoje</button></div></div>
+            <div className={'calendar-grid ' + calendarView}>{calendarView !== 'day' && ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(day => <div className="calendar-weekday" key={day}>{day}</div>)}{calendarDays.map(day => <div key={day} className={'calendar-cell ' + (day.slice(0,7) !== calendarDate.slice(0,7) && calendarView === 'month' ? 'outside-month' : '') + (day === today() ? ' is-today' : '')}><button type="button" className="calendar-day" onClick={() => {setCalendarDate(day);setCalendarView('day')}}>{new Date(day + 'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit', ...(calendarView === 'day' ? {month:'long'} : {})})}</button>{tasks.filter(task => task.due_date === day).map(task => <button type="button" key={task.id} className={'calendar-event ' + (task.status === 'Concluído' ? 'done' : task.priority === 'Urgente' ? 'urgent' : '')} onClick={() => setEditingTask({...task})} title={task.title}>{task.due_time ? task.due_time.slice(0,5) + ' · ' : ''}{task.title}</button>)}</div>)}</div>
             <div className="search-line"><Search size={15}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por atividade, descrição ou categoria..."/></div>
             <div className="task-filters"><label>Categoria<select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}><option>Todas</option>{categories.map(c => <option key={c[0]}>{c[0]}</option>)}</select></label><label>Prioridade<select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}><option>Todas</option><option>Baixa</option><option>Média</option><option>Alta</option><option>Urgente</option></select></label><label>De<input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}/></label><label>Até<input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)}/></label><button type="button" className="secondary-button" onClick={clearTaskFilters}>Limpar filtros</button></div>
-            {loadingTasks ? <div className="empty"><LoaderCircle className="spin"/><span>Carregando atividades...</span></div> : visibleTasks.length === 0 ? <div className="empty"><CalendarDays size={28}/><strong>Nenhuma atividade por aqui</strong><span>Adicione uma atividade acima para começar.</span></div> : <div className="task-list">{visibleTasks.map(task => <div className={'task-row ' + (task.status !== 'Concluído' && task.due_date < today() ? 'task-overdue' : '')} key={task.id}><div className="task-dot" style={{background: categories.find(c => c[0] === task.category)?.[1]}}/><div className="task-info"><strong>{task.title}</strong><span>{task.category} · {new Date(`${task.due_date}T12:00:00`).toLocaleDateString('pt-BR')}{task.due_time ? ` · ${task.due_time.slice(0,5)}` : ''} · Prioridade {task.priority}</span>{task.description && <small>{task.description}</small>}</div><select aria-label={`Status de ${task.title}`} value={task.status} onChange={e => changeStatus(task.id, e.target.value as TaskStatus)}><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select><button className="icon-button" onClick={() => deleteTask(task.id)} title="Arquivar atividade"><Trash2 size={15}/></button></div>)}</div>}
+            {loadingTasks ? <div className="empty"><LoaderCircle className="spin"/><span>Carregando atividades...</span></div> : visibleTasks.length === 0 ? <div className="empty"><CalendarDays size={28}/><strong>Nenhuma atividade por aqui</strong><span>Adicione uma atividade acima para começar.</span></div> : <div className="task-list">{visibleTasks.map(task => <div className={'task-row ' + (task.status !== 'Concluído' && task.due_date < today() ? 'task-overdue' : '')} key={task.id}><div className="task-dot" style={{background: categories.find(c => c[0] === task.category)?.[1]}}/><div className="task-info"><strong>{task.title}</strong><span>{task.category} · {new Date(`${task.due_date}T12:00:00`).toLocaleDateString('pt-BR')}{task.due_time ? ` · ${task.due_time.slice(0,5)}` : ''} · Prioridade {task.priority}</span>{task.description && <small>{task.description}</small>}</div><select aria-label={`Status de ${task.title}`} value={task.status} onChange={e => changeStatus(task.id, e.target.value as TaskStatus)}><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select><button type="button" className="icon-button" onClick={() => setEditingTask({...task})} title="Editar atividade"><Pencil size={15}/></button><button type="button" className="icon-button" onClick={() => deleteTask(task.id)} title="Arquivar atividade"><Trash2 size={15}/></button>{editingTask?.id === task.id && <form className="edit-task-form" onSubmit={saveEditedTask}><label>Título<input required value={editingTask.title} onChange={e => setEditingTask({...editingTask,title:e.target.value})}/></label><label>Descrição<input value={editingTask.description ?? ''} onChange={e => setEditingTask({...editingTask,description:e.target.value})}/></label><label>Categoria<select value={editingTask.category} onChange={e => setEditingTask({...editingTask,category:e.target.value})}>{categories.map(item => <option key={item[0]}>{item[0]}</option>)}</select></label><label>Data<input type="date" required value={editingTask.due_date} onChange={e => setEditingTask({...editingTask,due_date:e.target.value})}/></label><label>Horário<input type="time" value={editingTask.due_time ?? ''} onChange={e => setEditingTask({...editingTask,due_time:e.target.value || null})}/></label><label>Prioridade<select value={editingTask.priority} onChange={e => setEditingTask({...editingTask,priority:e.target.value as Priority})}><option>Baixa</option><option>Média</option><option>Alta</option><option>Urgente</option></select></label><div className="edit-actions"><button className="primary-button" type="submit">Salvar alterações</button><button className="secondary-button" type="button" onClick={() => setEditingTask(null)}>Cancelar</button></div></form>}</div>)}</div>}
           </section>
         </>}
         {section === 'visitas' && <>
