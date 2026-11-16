@@ -1,9 +1,10 @@
-import { useState } from 'react'
-import { CalendarDays, ClipboardList, History, Plus, Search, ShieldCheck, Menu, X, CheckCircle2, Clock3, AlertCircle, ChevronDown } from 'lucide-react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { CalendarDays, ClipboardList, History, Plus, Search, ShieldCheck, Menu, X, CheckCircle2, Clock3, AlertCircle, ChevronDown, LogOut, LoaderCircle, Trash2 } from 'lucide-react'
 import { hasSupabaseConfig, supabase } from './lib/supabase'
 
 type TaskStatus = 'A fazer' | 'Em andamento' | 'Concluído'
-type Task = { id: number; title: string; category: string; date: string; status: TaskStatus; priority: string }
+type Priority = 'Baixa' | 'Média' | 'Alta' | 'Urgente'
+type Task = { id: string; title: string; description: string | null; category: string; due_date: string; due_time: string | null; status: TaskStatus; priority: Priority }
 
 const categories = [
   ['Cemig', '#B9D3F2'], ['Ouvidorias', '#D9C7F0'], ['Auditorias', '#F6D6B8'],
@@ -12,55 +13,139 @@ const categories = [
   ['Impressão Cemig', '#C9CCF0'], ['Reunião', '#F2C4C4'],
   ['Cliente Wege / Smartben', '#BFDCD5'], ['Cliente Transferencia', '#E8C7EA'],
 ] as const
-
-const today = new Date().toISOString().slice(0, 10)
+const today = () => { const d = new Date(); return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-') }
 
 export default function App() {
   const [section, setSection] = useState<'agenda' | 'visitas' | 'historico'>('agenda')
+  const [sessionReady, setSessionReady] = useState(false)
+  const [userEmail, setUserEmail] = useState('')
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [authBusy, setAuthBusy] = useState(false)
   const [tasks, setTasks] = useState<Task[]>([])
+  const [loadingTasks, setLoadingTasks] = useState(false)
   const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
   const [category, setCategory] = useState('Cemig')
-  const [date, setDate] = useState(today)
+  const [date, setDate] = useState(today())
+  const [time, setTime] = useState('')
+  const [priority, setPriority] = useState<Priority>('Média')
   const [statusFilter, setStatusFilter] = useState('Todos')
+  const [search, setSearch] = useState('')
   const [mobileOpen, setMobileOpen] = useState(false)
   const [notice, setNotice] = useState('')
+  const [error, setError] = useState('')
 
-  async function signOutOrInfo() {
-    if (supabase) await supabase.auth.signOut()
-    setNotice('A conexão com o banco será configurada na próxima etapa.')
+  useEffect(() => {
+    if (!supabase) { setSessionReady(true); return }
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (error) setError(error.message)
+      setUserEmail(data.session?.user.email ?? '')
+      setSessionReady(true)
+    })
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUserEmail(session?.user.email ?? '')
+      setTasks([])
+    })
+    return () => listener.subscription.unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    if (!supabase || !userEmail) return
+    let active = true
+    setLoadingTasks(true)
+    supabase.from('tasks').select('id,title,description,category,due_date,due_time,status,priority')
+      .is('deleted_at', null).order('due_date', { ascending: true }).then(({ data, error }) => {
+        if (!active) return
+        if (error) setError('Não foi possível carregar suas atividades: ' + error.message)
+        else setTasks((data ?? []) as Task[])
+        setLoadingTasks(false)
+      })
+    return () => { active = false }
+  }, [userEmail])
+
+  async function handleAuth(event: FormEvent) {
+    event.preventDefault()
+    if (!supabase) return
+    setAuthBusy(true); setError(''); setNotice('')
+    try {
+      if (authMode === 'signup') {
+        const { data, error } = await supabase.auth.signUp({ email: email.trim(), password })
+        if (error) throw error
+        if (data.session) setNotice('Conta criada! Você já está conectado.')
+        else setNotice('Cadastro iniciado. Confira seu e-mail para confirmar a conta e depois entre.')
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+        if (error) throw error
+      }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Não foi possível concluir o acesso.') }
+    finally { setAuthBusy(false) }
   }
 
-  function addTask() {
-    if (!title.trim()) return
-    setTasks(current => [...current, { id: Date.now(), title: title.trim(), category, date, status: 'A fazer', priority: 'Média' }])
-    setTitle('')
-    setNotice('Atividade adicionada nesta prévia. A gravação permanente será ativada após configurar o banco de dados.')
+  async function addTask(event: FormEvent) {
+    event.preventDefault()
+    if (!supabase || !title.trim()) return
+    setError(''); setNotice('')
+    const { data: auth } = await supabase.auth.getUser()
+    if (!auth.user) { setError('Sua sessão expirou. Entre novamente.'); return }
+    const payload = { user_id: auth.user.id, title: title.trim(), description: description.trim() || null, category, due_date: date, due_time: time || null, priority, status: 'A fazer' as TaskStatus }
+    const { data, error } = await supabase.from('tasks').insert(payload).select('id,title,description,category,due_date,due_time,status,priority').single()
+    if (error) { setError('Não foi possível salvar a atividade: ' + error.message); return }
+    setTasks(current => [...current, data as Task].sort((a,b) => a.due_date.localeCompare(b.due_date)))
+    setTitle(''); setDescription(''); setTime(''); setPriority('Média'); setDate(today())
+    setNotice('Atividade salva com sucesso.')
   }
 
-  function changeStatus(id: number, status: TaskStatus) {
+  async function changeStatus(id: string, status: TaskStatus) {
+    if (!supabase) return
+    const previous = tasks
     setTasks(current => current.map(task => task.id === id ? { ...task, status } : task))
+    const { error } = await supabase.from('tasks').update({ status }).eq('id', id)
+    if (error) { setTasks(previous); setError('Não foi possível atualizar o status: ' + error.message) }
+    else setNotice('Status atualizado. A alteração foi registrada no histórico.')
   }
 
-  const visibleTasks = tasks.filter(t => statusFilter === 'Todos' || t.status === statusFilter)
+  async function deleteTask(id: string) {
+    if (!supabase || !window.confirm('Deseja arquivar esta atividade? Ela deixará de aparecer na agenda.')) return
+    const { error } = await supabase.from('tasks').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    if (error) setError('Não foi possível arquivar: ' + error.message)
+    else { setTasks(current => current.filter(task => task.id !== id)); setNotice('Atividade arquivada.') }
+  }
+
+  async function signOut() { if (supabase) await supabase.auth.signOut(); setTasks([]); setNotice('Você saiu da sua conta.') }
+
+  const visibleTasks = useMemo(() => tasks.filter(t => (statusFilter === 'Todos' || t.status === statusFilter) && (t.title.toLowerCase().includes(search.toLowerCase()) || t.category.toLowerCase().includes(search.toLowerCase()))), [tasks,statusFilter,search])
   const nav = [
     { id: 'agenda' as const, label: 'Minha Agenda', icon: CalendarDays },
     { id: 'visitas' as const, label: 'Visitas à Cemig', icon: ClipboardList },
     { id: 'historico' as const, label: 'Histórico', icon: History },
   ]
 
+  if (!sessionReady) return <div className="auth-screen"><div className="auth-card"><LoaderCircle className="spin"/><p>Conectando ao Watt-Wise...</p></div></div>
+  if (!hasSupabaseConfig || !supabase) return <div className="auth-screen"><div className="auth-card"><div className="brand-mark auth-mark">W</div><h1>Watt-Wise</h1><p>Falta configurar a conexão com o Supabase para liberar o acesso.</p><div className="setup-note"><ShieldCheck size={18}/><span>O endereço do projeto e a chave pública precisam estar nas variáveis de ambiente da hospedagem.</span></div></div></div>
+  if (!userEmail) return <div className="auth-screen"><form className="auth-card" onSubmit={handleAuth}><div className="brand-mark auth-mark">W</div><div className="eyebrow">ORGANIZAÇÃO & ACOMPANHAMENTO</div><h1>Watt-Wise</h1><p>{authMode === 'login' ? 'Entre para acessar sua agenda.' : 'Crie sua conta para começar a usar sua agenda.'}</p>
+    {error && <div className="error-message">{error}</div>}{notice && <div className="notice">{notice}</div>}
+    <label>E-mail<input type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com"/></label>
+    <label>Senha<input type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} minLength={6} required value={password} onChange={e => setPassword(e.target.value)} placeholder="Mínimo de 6 caracteres"/></label>
+    <button className="primary-button auth-submit" disabled={authBusy}>{authBusy ? 'Aguarde...' : authMode === 'login' ? 'Entrar' : 'Criar minha conta'}</button>
+    <button type="button" className="text-button" onClick={() => {setAuthMode(authMode === 'login' ? 'signup' : 'login');setError('');setNotice('')}}>{authMode === 'login' ? 'Ainda não tem conta? Criar acesso' : 'Já tem uma conta? Voltar ao login'}</button>
+    <small className="auth-foot"><ShieldCheck size={14}/> Seus registros são separados por conta.</small>
+  </form></div>
+
   return <div className="app-shell">
     <aside className={`sidebar ${mobileOpen ? 'open' : ''}`}>
       <div className="brand"><div className="brand-mark">W</div><div><strong>Watt-Wise</strong><small>Organização & acompanhamento</small></div><button className="mobile-close" onClick={() => setMobileOpen(false)}><X size={18}/></button></div>
       <div className="nav-caption">ESPAÇO DE TRABALHO</div>
       {nav.map(item => <button key={item.id} className={`nav-item ${section === item.id ? 'active' : ''}`} onClick={() => {setSection(item.id); setMobileOpen(false)}}><item.icon size={18}/>{item.label}</button>)}
-      <div className="sidebar-bottom"><ShieldCheck size={17}/><span>Área privada</span><small>Seus dados protegidos após configuração.</small></div>
+      <div className="sidebar-bottom"><ShieldCheck size={17}/><span>Área privada</span><small>Conectado como {userEmail}</small></div>
     </aside>
     {mobileOpen && <button className="scrim" onClick={() => setMobileOpen(false)} aria-label="Fechar menu"/>}
     <main className="main">
-      <header className="topbar"><button className="menu-button" onClick={() => setMobileOpen(true)}><Menu/></button><div className="breadcrumb">Watt-Wise <span>/</span> {nav.find(n => n.id === section)?.label}</div><button className="profile" onClick={signOutOrInfo}>WW <ChevronDown size={14}/></button></header>
+      <header className="topbar"><button className="menu-button" onClick={() => setMobileOpen(true)}><Menu/></button><div className="breadcrumb">Watt-Wise <span>/</span> {nav.find(n => n.id === section)?.label}</div><button className="profile" onClick={signOut} title="Sair da conta"><LogOut size={14}/> Sair <ChevronDown size={14}/></button></header>
       <div className="content">
         <div className="welcome"><div><div className="eyebrow">PAINEL DE CONTROLE</div><h1>{section === 'agenda' ? 'Minha Agenda' : section === 'visitas' ? 'Visitas à Cemig' : 'Histórico'}</h1><p>{section === 'agenda' ? 'Organize suas atividades e acompanhe suas prioridades.' : section === 'visitas' ? 'Registre atas, encaminhamentos e pendências das visitas.' : 'Acompanhe as movimentações registradas no sistema.'}</p></div><div className="date-chip"><CalendarDays size={16}/>{new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}</div></div>
-        {!hasSupabaseConfig && <div className="setup-note"><ShieldCheck size={18}/><div><strong>Configuração inicial</strong><span>Esta é uma prévia de desenvolvimento. Login e salvamento permanente serão ativados depois de conectar o banco de dados.</span></div></div>}
+        {error && <div className="error-message">{error}<button onClick={() => setError('')}>Fechar</button></div>}
         {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')}>Fechar</button></div>}
         {section === 'agenda' && <>
           <div className="stats">
@@ -71,16 +156,25 @@ export default function App() {
           </div>
           <section className="panel">
             <div className="panel-heading"><div><h2>Adicionar atividade</h2><p>Cadastre uma nova obrigação ou lembrete.</p></div><span className="soft-tag">NOVA TAREFA</span></div>
-            <div className="form-grid"><label className="wide">Título da atividade<input value={title} onChange={e => setTitle(e.target.value)} placeholder="Ex.: Retornar solicitação do cliente"/></label><label>Categoria<select value={category} onChange={e => setCategory(e.target.value)}>{categories.map(c => <option key={c[0]}>{c[0]}</option>)}</select></label><label>Data<input type="date" value={date} onChange={e => setDate(e.target.value)}/></label><div className="wide form-action"><button className="primary-button" onClick={addTask}><Plus size={17}/>Adicionar atividade</button></div></div>
+            <form className="form-grid" onSubmit={addTask}>
+              <label className="wide">Título da atividade<input required value={title} onChange={e => setTitle(e.target.value)} placeholder="Ex.: Retornar solicitação do cliente"/></label>
+              <label className="wide">Descrição (opcional)<input value={description} onChange={e => setDescription(e.target.value)} placeholder="Detalhes ou orientações"/></label>
+              <label>Categoria<select value={category} onChange={e => setCategory(e.target.value)}>{categories.map(c => <option key={c[0]}>{c[0]}</option>)}</select></label>
+              <label>Data<input type="date" required value={date} onChange={e => setDate(e.target.value)}/></label>
+              <label>Horário (opcional)<input type="time" value={time} onChange={e => setTime(e.target.value)}/></label>
+              <label>Prioridade<select value={priority} onChange={e => setPriority(e.target.value as Priority)}><option>Baixa</option><option>Média</option><option>Alta</option><option>Urgente</option></select></label>
+              <div className="wide form-action"><button className="primary-button" disabled={!title.trim()}><Plus size={17}/>Salvar atividade</button></div>
+            </form>
           </section>
           <section className="panel">
-            <div className="panel-heading list-heading"><div><h2>Suas atividades</h2><p>Atualize o andamento sempre que precisar.</p></div><label className="filter"><Search size={15}/><select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option>Todos</option><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select></label></div>
-            {visibleTasks.length === 0 ? <div className="empty"><CalendarDays size={28}/><strong>Nenhuma atividade por aqui</strong><span>Adicione uma atividade acima para começar.</span></div> : <div className="task-list">{visibleTasks.map(task => <div className="task-row" key={task.id}><div className="task-dot" style={{background: categories.find(c => c[0] === task.category)?.[1]}}/><div className="task-info"><strong>{task.title}</strong><span>{task.category} · {new Date(`${task.date}T12:00:00`).toLocaleDateString('pt-BR')}</span></div><select aria-label={`Status de ${task.title}`} value={task.status} onChange={e => changeStatus(task.id, e.target.value as TaskStatus)}><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select></div>)}</div>}
+            <div className="panel-heading list-heading"><div><h2>Suas atividades</h2><p>As atividades ficam salvas na sua conta.</p></div><label className="filter"><Search size={15}/><select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option>Todos</option><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select></label></div>
+            <div className="search-line"><Search size={15}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por atividade ou categoria..."/></div>
+            {loadingTasks ? <div className="empty"><LoaderCircle className="spin"/><span>Carregando atividades...</span></div> : visibleTasks.length === 0 ? <div className="empty"><CalendarDays size={28}/><strong>Nenhuma atividade por aqui</strong><span>Adicione uma atividade acima para começar.</span></div> : <div className="task-list">{visibleTasks.map(task => <div className="task-row" key={task.id}><div className="task-dot" style={{background: categories.find(c => c[0] === task.category)?.[1]}}/><div className="task-info"><strong>{task.title}</strong><span>{task.category} · {new Date(`${task.due_date}T12:00:00`).toLocaleDateString('pt-BR')}{task.due_time ? ` · ${task.due_time.slice(0,5)}` : ''} · Prioridade {task.priority}</span>{task.description && <small>{task.description}</small>}</div><select aria-label={`Status de ${task.title}`} value={task.status} onChange={e => changeStatus(task.id, e.target.value as TaskStatus)}><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select><button className="icon-button" onClick={() => deleteTask(task.id)} title="Arquivar atividade"><Trash2 size={15}/></button></div>)}</div>}
           </section>
         </>}
-        {section === 'visitas' && <section className="panel coming"><div className="coming-icon"><ClipboardList size={28}/></div><h2>Atas e acompanhamentos da Cemig</h2><p>A estrutura desta área será implementada na próxima etapa, incluindo tópicos individuais, responsáveis, protocolos, prazos e continuidade manual de pendências entre atas.</p><ul><li>Uma ata por visita, com quantos tópicos forem necessários.</li><li>Sugestão de pendências para a próxima ata, sempre com sua aprovação.</li><li>Histórico preservado e vínculo com a ata de origem.</li></ul></section>}
-        {section === 'historico' && <section className="panel coming"><div className="coming-icon"><History size={28}/></div><h2>Histórico de movimentações</h2><p>O histórico completo será ligado ao banco de dados para registrar alterações de status, prazos, responsáveis e transferências entre atas.</p></section>}
-        <footer>Watt-Wise <span>•</span> Primeira versão em desenvolvimento</footer>
+        {section === 'visitas' && <section className="panel coming"><div className="coming-icon"><ClipboardList size={28}/></div><h2>Atas e acompanhamentos da Cemig</h2><p>Esta área será implementada na próxima etapa, incluindo tópicos individuais, responsáveis, protocolos, prazos e continuidade manual de pendências entre atas.</p><ul><li>Uma ata por visita, com quantos tópicos forem necessários.</li><li>Sugestão de pendências para a próxima ata, sempre com sua aprovação.</li><li>Histórico preservado e vínculo com a ata de origem.</li></ul></section>}
+        {section === 'historico' && <section className="panel coming"><div className="coming-icon"><History size={28}/></div><h2>Histórico de movimentações</h2><p>O banco já registra automaticamente as alterações de status e de dados das atividades. A tela de consulta do histórico será ligada na próxima etapa.</p></section>}
+        <footer>Watt-Wise <span>•</span> Em desenvolvimento</footer>
       </div>
     </main>
   </div>
