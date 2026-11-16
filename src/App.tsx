@@ -7,7 +7,7 @@ type Priority = 'Baixa' | 'Média' | 'Alta' | 'Urgente'
 type Task = { id: string; title: string; description: string | null; category: string; due_date: string; due_time: string | null; status: TaskStatus; priority: Priority; assigned_to?: string | null; show_on_calendar?: boolean; deleted_at?: string | null }
 type PendingChange = { id: string; task: Task; deleted_at: string | null }
 type Visit = { id: string; user_id: string; visit_date: string; title: string; participants: string | null; notes: string | null; created_at?: string }
-type VisitTopic = { id: string; visit_id: string; user_id: string; title: string; description: string | null; responsible: string | null; protocol: string | null; due_date: string | null; status: 'Pendente' | 'Em análise' | 'Resolvido' | 'Não se aplica'; observations: string | null; origin_topic_id?: string | null }
+type VisitTopic = { id: string; visit_id: string; user_id: string; category?: string; title: string; description: string | null; responsible: string | null; protocol: string | null; due_date: string | null; status: 'Pendente' | 'Em análise' | 'Resolvido' | 'Não se aplica'; observations: string | null; origin_topic_id?: string | null }
 type TopicTransfer = { id: string; topic_id: string; from_visit_id: string; to_visit_id: string; user_id: string }; type PendingVisitChange = { table: 'visits' | 'visit_topics' | 'topic_transfers'; id: string; record: Visit | VisitTopic | TopicTransfer }
 const cacheKey = (id: string) => 'wattwise:' + id + ':tasks'
 const queueKey = (id: string) => 'wattwise:' + id + ':queue'
@@ -51,6 +51,7 @@ export default function App() {
   const [visitTitle, setVisitTitle] = useState('Visita à Cemig')
   const [participants, setParticipants] = useState('')
   const [visitNotes, setVisitNotes] = useState('')
+  const [topicCategory, setTopicCategory] = useState('Troca de titularidade')
   const [topicTitle, setTopicTitle] = useState('')
   const [topicDescription, setTopicDescription] = useState('')
   const [topicResponsible, setTopicResponsible] = useState('')
@@ -268,10 +269,10 @@ export default function App() {
   function addVisitTopic(event: FormEvent) {
     event.preventDefault()
     if (!userId || !selectedVisitId || !topicTitle.trim()) return
-    const topic: VisitTopic = { id: crypto.randomUUID(), visit_id: selectedVisitId, user_id: userId, title: topicTitle.trim(), description: topicDescription.trim() || null, responsible: topicResponsible.trim() || null, protocol: topicProtocol.trim() || null, due_date: topicDueDate || null, status: 'Pendente', observations: topicObservations.trim() || null }
+    const topic: VisitTopic = { id: crypto.randomUUID(), visit_id: selectedVisitId, user_id: userId, category: topicCategory, title: topicTitle.trim(), description: topicDescription.trim() || null, responsible: topicResponsible.trim() || null, protocol: topicProtocol.trim() || null, due_date: topicDueDate || null, status: 'Pendente', observations: topicObservations.trim() || null }
     const next = [...visitTopics, topic]
     setVisitTopics(next); saveTopicsCache(userId, next); queueVisitChange('visit_topics', topic)
-    setTopicTitle(''); setTopicDescription(''); setTopicResponsible(''); setTopicProtocol(''); setTopicDueDate(''); setTopicObservations('')
+    setTopicCategory('Troca de titularidade'); setTopicTitle(''); setTopicDescription(''); setTopicResponsible(''); setTopicProtocol(''); setTopicDueDate(''); setTopicObservations('')
     setNotice(isOnline ? 'Assunto registrado e enviado para sincronização.' : 'Assunto salvo neste dispositivo. Será sincronizado quando a internet voltar.')
   }
 
@@ -279,13 +280,35 @@ export default function App() {
     const visit = visits.find(item => item.id === selectedVisitId)
     if (!visit) return
     const rows = visitTopics.filter(topic => topic.visit_id === selectedVisitId)
-    const fields = ['Ata','Data da visita','Assunto','Descrição','Responsável','Protocolo','Prazo','Status','Observações','ID da ata de origem']
+    const fields = ['Ata','Data da visita','Categoria','Assunto','Descrição','Responsável','Protocolo','Prazo','Status','Observações','ID da ata de origem']
     const quote = (value: unknown) => '"' + String(value ?? '').replace(/"/g, '""') + '"'
-    const data = [fields, ...rows.map(topic => [visit.title, visit.visit_date, topic.title, topic.description, topic.responsible, topic.protocol, topic.due_date, topic.status, topic.observations, topic.origin_topic_id])].map(row => row.map(quote).join(';')).join('\r\n')
+    const data = [fields, ...rows.map(topic => [visit.title, visit.visit_date, topic.category ?? 'Não categorizado', topic.title, topic.description, topic.responsible, topic.protocol, topic.due_date, topic.status, topic.observations, topic.origin_topic_id])].map(row => row.map(quote).join(';')).join('\r\n')
     const blob = new Blob(['\\uFEFF' + data], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a'); link.href = url; link.download = 'ata-cemig-' + visit.visit_date + '.csv'; link.click(); URL.revokeObjectURL(url)
     setNotice('Arquivo CSV da ata preparado para exportação.')
+  }
+  function exportVisitExcel() {
+    const visit = visits.find(item => item.id === selectedVisitId)
+    if (!visit) return
+    const rows = visitTopics.filter(topic => topic.visit_id === selectedVisitId)
+    const escapeCell = (value: unknown) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    const table = [['Ata','Data da visita','Observações gerais','Categoria','Assunto','Descrição','Responsável','Protocolo','Prazo','Status','Observações'], ...rows.map(topic => [visit.title, visit.visit_date, visit.notes, topic.category ?? 'Não categorizado', topic.title, topic.description, topic.responsible, topic.protocol, topic.due_date, topic.status, topic.observations])]
+    const html = '<html><head><meta charset="UTF-8"></head><body><table border="1">' + table.map(row => '<tr>' + row.map(cell => '<td>' + escapeCell(cell) + '</td>').join('') + '</tr>').join('') + '</table></body></html>'
+    const blob = new Blob(['\\uFEFF', html], { type: 'application/vnd.ms-excel;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a'); link.href = url; link.download = 'ata-cemig-' + visit.visit_date + '.xls'; link.click(); URL.revokeObjectURL(url)
+    setNotice('Planilha Excel da ata preparada para exportação.')
+  }
+  function exportVisitPdf() {
+    const visit = visits.find(item => item.id === selectedVisitId)
+    if (!visit) return
+    const rows = visitTopics.filter(topic => topic.visit_id === selectedVisitId)
+    const popup = window.open('', '_blank')
+    if (!popup) { setError('O navegador bloqueou a janela de impressão. Permita pop-ups para gerar o PDF.'); return }
+    const escapeHtml = (value: unknown) => String(value ?? '—').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/\\n/g, '<br>')
+    popup.document.write('<!doctype html><html><head><meta charset="UTF-8"><title>' + escapeHtml(visit.title) + '</title><style>body{font:12px Arial,sans-serif;color:#222;padding:28px}h1{font-size:20px}h2{font-size:14px;margin-top:22px}p{white-space:pre-wrap;line-height:1.5}.meta{color:#555}table{width:100%;border-collapse:collapse;margin-top:12px}th,td{border:1px solid #bbb;padding:7px;text-align:left;vertical-align:top}th{background:#eee}tr{break-inside:avoid}@media print{body{padding:0}}</style></head><body><h1>' + escapeHtml(visit.title) + '</h1><p class="meta">Data: ' + escapeHtml(new Date(visit.visit_date + 'T12:00:00').toLocaleDateString('pt-BR')) + '<br>Participantes: ' + escapeHtml(visit.participants) + '</p><h2>Observações gerais</h2><p>' + escapeHtml(visit.notes) + '</p><h2>Assuntos registrados</h2><table><thead><tr><th>Categoria</th><th>Assunto / descrição</th><th>Responsável</th><th>Protocolo</th><th>Prazo</th><th>Status</th><th>Observações</th></tr></thead><tbody>' + rows.map(topic => '<tr><td>' + escapeHtml(topic.category ?? 'Não categorizado') + '</td><td><strong>' + escapeHtml(topic.title) + '</strong><br>' + escapeHtml(topic.description) + '</td><td>' + escapeHtml(topic.responsible) + '</td><td>' + escapeHtml(topic.protocol) + '</td><td>' + escapeHtml(topic.due_date) + '</td><td>' + escapeHtml(topic.status) + '</td><td>' + escapeHtml(topic.observations) + '</td></tr>').join('') + '</tbody></table><script>window.onload=()=>window.print()</script></body></html>')
+    popup.document.close()
   }
   function carryTopicForward(topic: VisitTopic) {
     if (!userId || !selectedVisitId || topic.visit_id === selectedVisitId) return
@@ -459,7 +482,7 @@ export default function App() {
               <label>Data da visita<input type="date" required value={visitDate} onChange={e => setVisitDate(e.target.value)}/></label>
               <label className="wide">Título da ata<input required value={visitTitle} onChange={e => setVisitTitle(e.target.value)}/></label>
               <label className="wide">Participantes<input value={participants} onChange={e => setParticipants(e.target.value)} placeholder="Nomes dos participantes"/></label>
-              <label className="wide">Observações gerais<input value={visitNotes} onChange={e => setVisitNotes(e.target.value)} placeholder="Anotações da visita"/></label>
+              <label className="wide notes-field">Observações gerais<textarea rows={7} value={visitNotes} onChange={e => setVisitNotes(e.target.value)} placeholder="Registre aqui todas as informações importantes da visita..."/></label>
               <div className="wide form-action"><button className="primary-button"><Plus size={17}/>Salvar visita</button></div>
             </form>
           </section>
@@ -468,14 +491,14 @@ export default function App() {
             {visits.length === 0 ? <div className="empty"><ClipboardList size={28}/><strong>Nenhuma visita cadastrada</strong><span>Cadastre a primeira visita acima. Você também poderá fazer isso off-line.</span></div> : <div className="visit-list">{visits.map(visit => <button key={visit.id} className={'visit-card ' + (selectedVisitId === visit.id ? 'selected' : '')} onClick={() => setSelectedVisitId(visit.id)}><span><strong>{visit.title}</strong><small>{new Date(visit.visit_date + 'T12:00:00').toLocaleDateString('pt-BR')} · {visitTopics.filter(t => t.visit_id === visit.id).length} assunto(s)</small></span><ChevronDown size={16}/></button>)}</div>}
           </section>
           {selectedVisitId && visits.some(v => v.id === selectedVisitId) && <section className="panel">
-            <div className="panel-heading"><div><h2>Assuntos da ata</h2><p>{visits.find(v => v.id === selectedVisitId)?.title} · {new Date((visits.find(v => v.id === selectedVisitId)?.visit_date ?? today()) + 'T12:00:00').toLocaleDateString('pt-BR')}</p></div><div className="heading-actions"><span className="soft-tag">{visitTopics.filter(t => t.visit_id === selectedVisitId).length} ASSUNTO(S)</span><button type="button" className="secondary-button export-button" onClick={exportVisitCsv}><FileDown size={14}/> Exportar CSV</button></div></div>
+            <div className="panel-heading"><div><h2>Assuntos da ata</h2><p>{visits.find(v => v.id === selectedVisitId)?.title} · {new Date((visits.find(v => v.id === selectedVisitId)?.visit_date ?? today()) + 'T12:00:00').toLocaleDateString('pt-BR')}</p></div><div className="heading-actions"><span className="soft-tag">{visitTopics.filter(t => t.visit_id === selectedVisitId).length} ASSUNTO(S)</span><button type="button" className="secondary-button export-button" onClick={exportVisitPdf}><FileDown size={14}/> PDF</button><button type="button" className="secondary-button export-button" onClick={exportVisitExcel}><FileDown size={14}/> Excel</button></div></div>
             <form className="form-grid" onSubmit={addVisitTopic}>
-              <label className="wide">Assunto<input required value={topicTitle} onChange={e => setTopicTitle(e.target.value)} placeholder="Ex.: Retorno sobre solicitação"/></label>
+              <label>Categoria<select value={topicCategory} onChange={e => setTopicCategory(e.target.value)}><option>Troca de titularidade</option><option>Transferência saldo de geração</option><option>Fatura Cemig</option><option>Primeira Ligação</option><option>CPF divergente na Cemig</option></select></label>\n              <label className="wide">Assunto<input required value={topicTitle} onChange={e => setTopicTitle(e.target.value)} placeholder="Ex.: Retorno sobre solicitação"/></label>
               <label className="wide">Descrição<input value={topicDescription} onChange={e => setTopicDescription(e.target.value)} placeholder="Detalhes do assunto"/></label>
               <label>Responsável<input value={topicResponsible} onChange={e => setTopicResponsible(e.target.value)} placeholder="Responsável"/></label>
               <label>Protocolo<input value={topicProtocol} onChange={e => setTopicProtocol(e.target.value)} placeholder="Nº do protocolo"/></label>
               <label>Prazo<input type="date" value={topicDueDate} onChange={e => setTopicDueDate(e.target.value)}/></label>
-              <label className="wide">Observações<input value={topicObservations} onChange={e => setTopicObservations(e.target.value)} placeholder="Observações e encaminhamentos"/></label>
+              <label className="wide">Observações<textarea rows={3} value={topicObservations} onChange={e => setTopicObservations(e.target.value)} placeholder="Observações e encaminhamentos"/></label>
               <div className="wide form-action"><button className="primary-button"><Plus size={17}/>Adicionar assunto</button></div>
             </form>
             <div className="carry-panel schedule-panel"><div><strong>Programar assunto para uma data futura</strong><p>Escolha uma pendência e a data. O Watt-Wise criará uma ata nessa data ou aproveitará uma já cadastrada.</p></div><form className="schedule-form" onSubmit={scheduleTopicForDate}><label>Assunto pendente<select required value={scheduledTopicId} onChange={e => setScheduledTopicId(e.target.value)}><option value="">Selecione um assunto</option>{visitTopics.filter(t => t.status !== 'Resolvido' && t.status !== 'Não se aplica').map(t => <option key={t.id} value={t.id}>{t.title} · {visits.find(v => v.id === t.visit_id)?.visit_date ?? 'Sem data'}</option>)}</select></label><label>Data da ata futura<input type="date" required min={today()} value={scheduledDate} onChange={e => setScheduledDate(e.target.value)}/></label><button className="secondary-button" type="submit" disabled={!scheduledTopicId || !scheduledDate}>Programar assunto</button></form></div>
