@@ -174,7 +174,9 @@ export default function App() {
     if (!userId) return
     const queue = readJson<PendingChange[]>(queueKey(userId), [])
     const next = [...queue.filter(item => item.id !== task.id), { id: task.id, task, deleted_at }]
-    savePending(userId, next); setPendingCount(next.length); setSyncVersion(v => v + 1)
+    savePending(userId, next)
+    setPendingCount(next.length + readJson<PendingVisitChange[]>(visitQueueKey(userId), []).length)
+    setSyncVersion(v => v + 1)
   }
 
   async function handleAuth(event: FormEvent) {
@@ -310,7 +312,16 @@ export default function App() {
     setNotice(isOnline ? 'Status do assunto atualizado.' : 'Status atualizado off-line e aguardando sincronização.')
   }
 
-  async function signOut() { if (supabase) await supabase.auth.signOut(); setTasks([]); setNotice('Você saiu da sua conta.') }
+  async function signOut() {
+    if (supabase) {
+      const { error } = await supabase.auth.signOut()
+      if (error) { setError('Não foi possível sair da conta: ' + error.message); return }
+    }
+    localStorage.removeItem('wattwise:offline-user')
+    setUserEmail(''); setUserId(''); setTasks([]); setVisits([]); setVisitTopics([])
+    setHistoryEvents([]); setSelectedVisitId(''); setPendingCount(0)
+    setNotice('Você saiu da sua conta. O acesso off-line desta sessão foi encerrado.')
+  }
 
   const visibleTasks = useMemo(() => tasks.filter(t => (statusFilter === 'Todos' || t.status === statusFilter) && (t.title.toLowerCase().includes(search.toLowerCase()) || t.category.toLowerCase().includes(search.toLowerCase()))), [tasks,statusFilter,search])
   const nav = [
