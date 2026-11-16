@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { CalendarDays, ClipboardList, History, Plus, Search, ShieldCheck, Menu, X, CheckCircle2, Clock3, AlertCircle, ChevronDown, LogOut, LoaderCircle, Trash2 } from 'lucide-react'
+import { CalendarDays, ClipboardList, History, Plus, Search, FileDown, ShieldCheck, Menu, X, CheckCircle2, Clock3, AlertCircle, ChevronDown, LogOut, LoaderCircle, Trash2 } from 'lucide-react'
 import { hasSupabaseConfig, supabase } from './lib/supabase'
 
 type TaskStatus = 'A fazer' | 'Em andamento' | 'Concluído'
@@ -240,6 +240,18 @@ export default function App() {
     setNotice(isOnline ? 'Assunto registrado e enviado para sincronização.' : 'Assunto salvo neste dispositivo. Será sincronizado quando a internet voltar.')
   }
 
+  function exportVisitCsv() {
+    const visit = visits.find(item => item.id === selectedVisitId)
+    if (!visit) return
+    const rows = visitTopics.filter(topic => topic.visit_id === selectedVisitId)
+    const fields = ['Ata','Data da visita','Assunto','Descrição','Responsável','Protocolo','Prazo','Status','Observações','ID da ata de origem']
+    const quote = (value: unknown) => '"' + String(value ?? '').replace(/"/g, '""') + '"'
+    const data = [fields, ...rows.map(topic => [visit.title, visit.visit_date, topic.title, topic.description, topic.responsible, topic.protocol, topic.due_date, topic.status, topic.observations, topic.origin_topic_id])].map(row => row.map(quote).join(';')).join('\r\n')
+    const blob = new Blob(['\\uFEFF' + data], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a'); link.href = url; link.download = 'ata-cemig-' + visit.visit_date + '.csv'; link.click(); URL.revokeObjectURL(url)
+    setNotice('Arquivo CSV da ata preparado para exportação.')
+  }
   function carryTopicForward(topic: VisitTopic) {
     if (!userId || !selectedVisitId || topic.visit_id === selectedVisitId) return
     const alreadyCarried = visitTopics.some(item => item.visit_id === selectedVisitId && item.origin_topic_id === topic.id)
@@ -341,7 +353,7 @@ export default function App() {
             {visits.length === 0 ? <div className="empty"><ClipboardList size={28}/><strong>Nenhuma visita cadastrada</strong><span>Cadastre a primeira visita acima. Você também poderá fazer isso off-line.</span></div> : <div className="visit-list">{visits.map(visit => <button key={visit.id} className={'visit-card ' + (selectedVisitId === visit.id ? 'selected' : '')} onClick={() => setSelectedVisitId(visit.id)}><span><strong>{visit.title}</strong><small>{new Date(visit.visit_date + 'T12:00:00').toLocaleDateString('pt-BR')} · {visitTopics.filter(t => t.visit_id === visit.id).length} assunto(s)</small></span><ChevronDown size={16}/></button>)}</div>}
           </section>
           {selectedVisitId && visits.some(v => v.id === selectedVisitId) && <section className="panel">
-            <div className="panel-heading"><div><h2>Assuntos da ata</h2><p>{visits.find(v => v.id === selectedVisitId)?.title} · {new Date((visits.find(v => v.id === selectedVisitId)?.visit_date ?? today()) + 'T12:00:00').toLocaleDateString('pt-BR')}</p></div><span className="soft-tag">{visitTopics.filter(t => t.visit_id === selectedVisitId).length} ASSUNTO(S)</span></div>
+            <div className="panel-heading"><div><h2>Assuntos da ata</h2><p>{visits.find(v => v.id === selectedVisitId)?.title} · {new Date((visits.find(v => v.id === selectedVisitId)?.visit_date ?? today()) + 'T12:00:00').toLocaleDateString('pt-BR')}</p></div><div className="heading-actions"><span className="soft-tag">{visitTopics.filter(t => t.visit_id === selectedVisitId).length} ASSUNTO(S)</span><button type="button" className="secondary-button export-button" onClick={exportVisitCsv}><FileDown size={14}/> Exportar CSV</button></div></div>
             <form className="form-grid" onSubmit={addVisitTopic}>
               <label className="wide">Assunto<input required value={topicTitle} onChange={e => setTopicTitle(e.target.value)} placeholder="Ex.: Retorno sobre solicitação"/></label>
               <label className="wide">Descrição<input value={topicDescription} onChange={e => setTopicDescription(e.target.value)} placeholder="Detalhes do assunto"/></label>
