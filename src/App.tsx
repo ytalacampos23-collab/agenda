@@ -90,7 +90,7 @@ export default function App() {
           savePending(userId, queue)
           if (!cancelled) setPendingCount(queue.length)
         }
-        const result = await supabase.from('tasks').select('id,title,description,category,due_date,due_time,status,priority,deleted_at').order('due_date', { ascending: true })
+        const result = await supabase!.from('tasks').select('id,title,description,category,due_date,due_time,status,priority,deleted_at').order('due_date', { ascending: true })
         if (result.error) throw result.error
         if (!cancelled) {
           const merged = ((result.data ?? []) as Task[]).filter(t => !t.deleted_at)
