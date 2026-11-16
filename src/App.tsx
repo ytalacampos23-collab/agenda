@@ -97,8 +97,13 @@ export default function App() {
   useEffect(() => {
     if (!userId) return
     const cached = readJson<Task[]>(cacheKey(userId), [])
+    const cachedVisits = readJson<Visit[]>(visitCacheKey(userId), [])
+    const cachedTopics = readJson<VisitTopic[]>(topicCacheKey(userId), [])
     setTasks(cached.filter(t => !t.deleted_at))
-    setPendingCount(readJson<PendingChange[]>(queueKey(userId), []).length)
+    setVisits(cachedVisits)
+    setVisitTopics(cachedTopics)
+    setSelectedVisitId(current => current || cachedVisits[0]?.id || '')
+    setPendingCount(readJson<PendingChange[]>(queueKey(userId), []).length + readJson<PendingVisitChange[]>(visitQueueKey(userId), []).length)
     if (!isOnline || !supabase) return
     let cancelled = false
     const sync = async () => {
