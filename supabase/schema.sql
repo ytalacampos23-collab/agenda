@@ -14,6 +14,8 @@ create table if not exists public.tasks (
   due_date date not null,
   due_time time,
   priority text not null default 'Média' check (priority in ('Baixa','Média','Alta','Urgente')),
+  assigned_to text,
+  show_on_calendar boolean not null default true,
   status text not null default 'A fazer' check (status in ('A fazer','Em andamento','Concluído')),
   deleted_at timestamptz,
   created_at timestamptz not null default now(),
@@ -93,6 +95,8 @@ create table if not exists public.visit_topic_events (
 
 -- 2) Compatibilidade com a primeira versão e integridade entre registros do mesmo usuário
 alter table public.tasks add column if not exists deleted_at timestamptz;
+alter table public.tasks add column if not exists assigned_to text;
+alter table public.tasks add column if not exists show_on_calendar boolean not null default true;
 alter table public.tasks add column if not exists updated_at timestamptz not null default now();
 alter table public.visits add column if not exists updated_at timestamptz not null default now();
 alter table public.visit_topics add column if not exists updated_at timestamptz not null default now();
@@ -166,7 +170,8 @@ begin
         jsonb_build_object('date',new.due_date,'time',new.due_time));
     end if;
     if old.title is distinct from new.title or old.description is distinct from new.description
-       or old.category is distinct from new.category or old.priority is distinct from new.priority then
+       or old.category is distinct from new.category or old.priority is distinct from new.priority
+       or old.assigned_to is distinct from new.assigned_to or old.show_on_calendar is distinct from new.show_on_calendar then
       insert into public.task_events(task_id,user_id,event_type,old_value,new_value)
       values(new.id,new.user_id,'details_changed',to_jsonb(old),to_jsonb(new));
     end if;
