@@ -7,8 +7,8 @@ type Priority = 'Baixa' | 'Média' | 'Alta' | 'Urgente'
 type Task = { id: string; title: string; description: string | null; category: string; due_date: string; due_time: string | null; status: TaskStatus; priority: Priority; deleted_at?: string | null }
 type PendingChange = { id: string; task: Task; deleted_at: string | null }
 type Visit = { id: string; user_id: string; visit_date: string; title: string; participants: string | null; notes: string | null; created_at?: string }
-type VisitTopic = { id: string; visit_id: string; user_id: string; title: string; description: string | null; responsible: string | null; protocol: string | null; due_date: string | null; status: 'Pendente' | 'Em análise' | 'Resolvido' | 'Não se aplica'; observations: string | null }
-type PendingVisitChange = { table: 'visits' | 'visit_topics'; id: string; record: Visit | VisitTopic }
+type VisitTopic = { id: string; visit_id: string; user_id: string; title: string; description: string | null; responsible: string | null; protocol: string | null; due_date: string | null; status: 'Pendente' | 'Em análise' | 'Resolvido' | 'Não se aplica'; observations: string | null; origin_topic_id?: string | null }
+type TopicTransfer = { id: string; topic_id: string; from_visit_id: string; to_visit_id: string; user_id: string }; type PendingVisitChange = { table: 'visits' | 'visit_topics' | 'topic_transfers'; id: string; record: Visit | VisitTopic | TopicTransfer }
 const cacheKey = (id: string) => 'wattwise:' + id + ':tasks'
 const queueKey = (id: string) => 'wattwise:' + id + ':queue'
 const readJson = <T,>(key: string, fallback: T): T => { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : fallback } catch { return fallback } }
@@ -112,7 +112,7 @@ export default function App() {
           if (!cancelled) setPendingCount(queue.length + readJson<PendingVisitChange[]>(visitQueueKey(userId), []).length)
         }
         let visitChanges = readJson<PendingVisitChange[]>(visitQueueKey(userId), [])
-        for (const change of [...visitChanges].sort((a,b) => (a.table === 'visits' ? 0 : 1) - (b.table === 'visits' ? 0 : 1))) {
+        for (const change of [...visitChanges].sort((a,b) => (a.table === 'visits' ? 0 : a.table === 'visit_topics' ? 1 : 2) - (b.table === 'visits' ? 0 : b.table === 'visit_topics' ? 1 : 2))) {
           const result = await supabase!.from(change.table).upsert(change.record as any, { onConflict: 'id' })
           if (result.error) throw result.error
           visitChanges = visitChanges.filter(item => !(item.table === change.table && item.id === change.id))
@@ -154,7 +154,7 @@ export default function App() {
   const saveVisitsCache = (id: string, rows: Visit[]) => localStorage.setItem(visitCacheKey(id), JSON.stringify(rows))
   const saveTopicsCache = (id: string, rows: VisitTopic[]) => localStorage.setItem(topicCacheKey(id), JSON.stringify(rows))
 
-  function queueVisitChange(table: 'visits' | 'visit_topics', record: Visit | VisitTopic) {
+  function queueVisitChange(table: PendingVisitChange['table'], record: Visit | VisitTopic | TopicTransfer) {
     if (!userId) return
     const queue = readJson<PendingVisitChange[]>(visitQueueKey(userId), [])
     const next = [...queue.filter(item => !(item.table === table && item.id === record.id)), { table, id: record.id, record }]
@@ -240,6 +240,17 @@ export default function App() {
     setNotice(isOnline ? 'Assunto registrado e enviado para sincronização.' : 'Assunto salvo neste dispositivo. Será sincronizado quando a internet voltar.')
   }
 
+  function carryTopicForward(topic: VisitTopic) {
+    if (!userId || !selectedVisitId || topic.visit_id === selectedVisitId) return
+    const alreadyCarried = visitTopics.some(item => item.visit_id === selectedVisitId && item.origin_topic_id === topic.id)
+    if (alreadyCarried) { setNotice('Este assunto já foi incluído nesta ata.'); return }
+    const carried: VisitTopic = { ...topic, id: crypto.randomUUID(), visit_id: selectedVisitId, user_id: userId, status: 'Pendente', origin_topic_id: topic.id, observations: [topic.observations, 'Continuidade do assunto registrado na ata de ' + (visits.find(v => v.id === topic.visit_id)?.visit_date ?? '')].filter(Boolean).join(' · ') || null }
+    const next = [...visitTopics, carried]
+    setVisitTopics(next); saveTopicsCache(userId, next); queueVisitChange('visit_topics', carried)
+    const transfer: TopicTransfer = { id: crypto.randomUUID(), topic_id: topic.id, from_visit_id: topic.visit_id, to_visit_id: selectedVisitId, user_id: userId }
+    queueVisitChange('topic_transfers', transfer)
+    setNotice('Assunto incluído nesta ata, mantendo o vínculo com a ata de origem.')
+  }
   function changeTopicStatus(id: string, status: VisitTopic['status']) {
     const topic = visitTopics.find(item => item.id === id)
     if (!topic) return
@@ -340,6 +351,7 @@ export default function App() {
               <label className="wide">Observações<input value={topicObservations} onChange={e => setTopicObservations(e.target.value)} placeholder="Observações e encaminhamentos"/></label>
               <div className="wide form-action"><button className="primary-button"><Plus size={17}/>Adicionar assunto</button></div>
             </form>
+            {visitTopics.filter(t => t.visit_id !== selectedVisitId && t.status !== "Resolvido" && t.status !== "Não se aplica" && !visitTopics.some(copy => copy.visit_id === selectedVisitId && copy.origin_topic_id === t.id)).length > 0 && <div className="carry-panel"><div><strong>Pendências de outras atas</strong><p>Escolha individualmente quais assuntos devem continuar nesta ata.</p></div>{visitTopics.filter(t => t.visit_id !== selectedVisitId && t.status !== "Resolvido" && t.status !== "Não se aplica" && !visitTopics.some(copy => copy.visit_id === selectedVisitId && copy.origin_topic_id === t.id)).map(topic => <div className="carry-row" key={topic.id}><span><strong>{topic.title}</strong><small>{visits.find(v => v.id === topic.visit_id)?.title ?? "Ata anterior"} · {topic.status}</small></span><button type="button" className="secondary-button" onClick={() => carryTopicForward(topic)}>Incluir nesta ata</button></div>)}</div>}
             <div className="panel-heading list-heading topic-list-heading"><div><h2>Assuntos cadastrados</h2><p>Atualize o andamento de cada assunto.</p></div><label className="filter"><select value={topicFilter} onChange={e => setTopicFilter(e.target.value)}><option>Todos</option><option>Pendente</option><option>Em análise</option><option>Resolvido</option><option>Não se aplica</option></select></label></div>
             {visitTopics.filter(t => t.visit_id === selectedVisitId && (topicFilter === 'Todos' || t.status === topicFilter)).length === 0 ? <div className="empty"><strong>Nenhum assunto cadastrado nesta ata</strong><span>Adicione um assunto no formulário acima.</span></div> : <div className="task-list">{visitTopics.filter(t => t.visit_id === selectedVisitId && (topicFilter === 'Todos' || t.status === topicFilter)).map(topic => <div className="topic-row" key={topic.id}><div className="task-info"><strong>{topic.title}</strong><span>{topic.responsible ? 'Responsável: ' + topic.responsible + ' · ' : ''}{topic.protocol ? 'Protocolo: ' + topic.protocol + ' · ' : ''}{topic.due_date ? 'Prazo: ' + new Date(topic.due_date + 'T12:00:00').toLocaleDateString('pt-BR') : 'Sem prazo'}</span>{topic.description && <small>{topic.description}</small>}{topic.observations && <small>Observações: {topic.observations}</small>}</div><select aria-label={'Status de ' + topic.title} value={topic.status} onChange={e => changeTopicStatus(topic.id, e.target.value as VisitTopic['status'])}><option>Pendente</option><option>Em análise</option><option>Resolvido</option><option>Não se aplica</option></select></div>)}</div>}
           </section>}
