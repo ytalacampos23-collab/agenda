@@ -44,6 +44,7 @@ create table if not exists public.visits (
 );
 
 create table if not exists public.visit_topics (
+  category text not null default 'Não categorizado',
   id uuid primary key default gen_random_uuid(),
   visit_id uuid not null,
   user_id uuid not null references auth.users(id) on delete cascade,
