@@ -34,6 +34,7 @@ export default function App() {
   const [userId, setUserId] = useState('')
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [syncing, setSyncing] = useState(false)
+  const [syncFailed, setSyncFailed] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
   const [syncVersion, setSyncVersion] = useState(0)
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
@@ -156,9 +157,10 @@ export default function App() {
           setVisitTopics((topicResult.data ?? []) as VisitTopic[]); saveTopicsCache(userId, (topicResult.data ?? []) as VisitTopic[])
           setPendingCount(readJson<PendingChange[]>(queueKey(userId), []).length + readJson<PendingVisitChange[]>(visitQueueKey(userId), []).length)
           setError('')
+          setSyncFailed(false)
         }
       } catch (e) {
-        if (!cancelled) setError('Sincronização pendente. Seus dados continuam salvos neste dispositivo. ' + (e instanceof Error ? e.message : ''))
+        if (!cancelled) { setSyncFailed(true); setError('Sincronização pendente. Seus dados continuam salvos neste dispositivo. ' + (e instanceof Error ? e.message : '')) }
       } finally { if (!cancelled) setSyncing(false) }
     }
     void sync()
@@ -395,7 +397,7 @@ export default function App() {
     </aside>
     {mobileOpen && <button className="scrim" onClick={() => setMobileOpen(false)} aria-label="Fechar menu"/>}
     <main className="main">
-      <header className="topbar"><button className="menu-button" onClick={() => setMobileOpen(true)}><Menu/></button><div className="breadcrumb">Watt-Wise <span>/</span> {nav.find(n => n.id === section)?.label}</div><div className={'sync-indicator ' + (!isOnline ? 'offline' : syncing ? 'syncing' : pendingCount ? 'pending' : 'online')}><span className="sync-dot"/>{!isOnline ? 'Off-line' : syncing ? 'Sincronizando...' : pendingCount ? pendingCount + ' pendente(s)' : 'Sincronizado'}</div><button className="profile" onClick={signOut} title="Sair da conta"><LogOut size={14}/> Sair <ChevronDown size={14}/></button></header>
+      <header className="topbar"><button className="menu-button" onClick={() => setMobileOpen(true)}><Menu/></button><div className="breadcrumb">Watt-Wise <span>/</span> {nav.find(n => n.id === section)?.label}</div><div className={'sync-indicator ' + (!isOnline ? 'offline' : syncing ? 'syncing' : syncFailed ? 'pending' : pendingCount ? 'pending' : 'online')}><span className="sync-dot"/>{!isOnline ? 'Off-line' : syncing ? 'Sincronizando...' : syncFailed ? 'Falha na sincronização' : pendingCount ? pendingCount + ' pendente(s)' : 'Sincronizado'}</div><button className="profile" onClick={signOut} title="Sair da conta"><LogOut size={14}/> Sair <ChevronDown size={14}/></button></header>
       <div className="content">
         <div className="welcome"><div><div className="eyebrow">PAINEL DE CONTROLE</div><h1>{section === 'agenda' ? 'Minha Agenda' : section === 'visitas' ? 'Visitas à Cemig' : 'Histórico'}</h1><p>{section === 'agenda' ? 'Organize suas atividades e acompanhe suas prioridades.' : section === 'visitas' ? 'Registre atas, encaminhamentos e pendências das visitas.' : 'Acompanhe as movimentações registradas no sistema.'}</p></div><div className="date-chip"><CalendarDays size={16}/>{new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}</div></div>
         {error && <div className="error-message">{error}<button onClick={() => setError('')}>Fechar</button></div>}
