@@ -30,7 +30,7 @@ jobs:
         run: npm run build
         env:
           VITE_SUPABASE_URL: https://ricjeqgfzsthsutdeyah.supabase.co
-          VITE_SUPABASE_PUBLISHABLE_KEY: \${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
       - name: Configurar GitHub Pages
         uses: actions/configure-pages@v5
       - name: Preparar arquivos do site
@@ -41,7 +41,7 @@ jobs:
   deploy:
     environment:
       name: github-pages
-      url: \${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: build
     steps:
