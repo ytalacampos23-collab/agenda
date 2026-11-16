@@ -8,7 +8,7 @@ type Task = { id: string; title: string; description: string | null; category: s
 type PendingChange = { id: string; task: Task; deleted_at: string | null }
 type Visit = { id: string; user_id: string; visit_date: string; title: string; participants: string | null; notes: string | null; created_at?: string }
 type VisitTopic = { id: string; visit_id: string; user_id: string; category?: string; title: string; description: string | null; responsible: string | null; protocol: string | null; due_date: string | null; status: 'Pendente' | 'Em análise' | 'Resolvido' | 'Não se aplica'; observations: string | null; origin_topic_id?: string | null }
-type TopicTransfer = { id: string; topic_id: string; from_visit_id: string; to_visit_id: string; user_id: string }; type PendingVisitChange = { table: 'visits' | 'visit_topics' | 'topic_transfers'; id: string; record: Visit | VisitTopic | TopicTransfer }
+type TopicTransfer = { id: string; topic_id: string; from_visit_id: string; to_visit_id: string; user_id: string }; type PendingVisitChange = { table: 'visits' | 'visit_topics' | 'topic_transfers'; id: string; record: Visit | VisitTopic | TopicTransfer; action?: 'upsert' | 'delete' }
 const cacheKey = (id: string) => 'wattwise:' + id + ':tasks'
 const queueKey = (id: string) => 'wattwise:' + id + ':queue'
 const readJson = <T,>(key: string, fallback: T): T => { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : fallback } catch { return fallback } }
@@ -133,8 +133,8 @@ export default function App() {
           if (!cancelled) setPendingCount(queue.length + readJson<PendingVisitChange[]>(visitQueueKey(userId), []).length)
         }
         let visitChanges = readJson<PendingVisitChange[]>(visitQueueKey(userId), [])
-        for (const change of [...visitChanges].sort((a,b) => (a.table === 'visits' ? 0 : a.table === 'visit_topics' ? 1 : 2) - (b.table === 'visits' ? 0 : b.table === 'visit_topics' ? 1 : 2))) {
-          const result = await supabase!.from(change.table).upsert(change.record as any, { onConflict: 'id' })
+        for (const change of [...visitChanges].sort((a,b) => { const rank = (x: PendingVisitChange) => x.action === 'delete' ? (x.table === 'visit_topics' ? 0 : x.table === 'visits' ? 1 : 2) : (x.table === 'visits' ? 3 : x.table === 'visit_topics' ? 4 : 5); return rank(a) - rank(b) })) {
+          const result = change.action === 'delete' ? await supabase!.from(change.table).delete().eq('id', change.id) : await supabase!.from(change.table).upsert(change.record as any, { onConflict: 'id' })
           if (result.error) throw result.error
           visitChanges = visitChanges.filter(item => !(item.table === change.table && item.id === change.id))
           localStorage.setItem(visitQueueKey(userId), JSON.stringify(visitChanges))
@@ -183,10 +183,80 @@ export default function App() {
   function queueVisitChange(table: PendingVisitChange['table'], record: Visit | VisitTopic | TopicTransfer) {
     if (!userId) return
     const queue = readJson<PendingVisitChange[]>(visitQueueKey(userId), [])
-    const next = [...queue.filter(item => !(item.table === table && item.id === record.id)), { table, id: record.id, record }]
+    const next = [...queue.filter(item => !(item.table === table && item.id === record.id)), { table, id: record.id, record, action: 'upsert' as const }]
     localStorage.setItem(visitQueueKey(userId), JSON.stringify(next))
     setPendingCount(readJson<PendingChange[]>(queueKey(userId), []).length + next.length)
     setSyncVersion(v => v + 1)
+  }
+
+
+  function queueVisitDelete(table: PendingVisitChange['table'], id: string, record: Visit | VisitTopic | TopicTransfer) {
+    if (!userId) return
+    const queue = readJson<PendingVisitChange[]>(visitQueueKey(userId), [])
+    const next = [...queue.filter(item => !(item.table === table && item.id === id)), { table, id, record, action: 'delete' as const }]
+    localStorage.setItem(visitQueueKey(userId), JSON.stringify(next))
+    setPendingCount(readJson<PendingChange[]>(queueKey(userId), []).length + next.length)
+    setSyncVersion(v => v + 1)
+  }
+
+  function collectTopicDescendants(rootIds: string[]) {
+    const ids = new Set(rootIds)
+    let changed = true
+    while (changed) {
+      changed = false
+      for (const topic of visitTopics) {
+        if (topic.origin_topic_id && ids.has(topic.origin_topic_id) && !ids.has(topic.id)) {
+          ids.add(topic.id)
+          changed = true
+        }
+      }
+    }
+    return ids
+  }
+
+  function deleteVisit(id: string) {
+    const visit = visits.find(item => item.id === id)
+    if (!visit || !userId) return
+    if (!window.confirm('Excluir esta visita/ata e todos os assuntos vinculados? As continuidades desses assuntos em outras atas também serão excluídas. Esta ação não poderá ser desfeita.')) return
+    const rootIds = visitTopics.filter(topic => topic.visit_id === id).map(topic => topic.id)
+    const ids = collectTopicDescendants(rootIds)
+    const depth = (topic: VisitTopic): number => {
+      let value = 0, parent = topic.origin_topic_id
+      while (parent && ids.has(parent)) {
+        value++
+        parent = visitTopics.find(item => item.id === parent)?.origin_topic_id
+      }
+      return value
+    }
+    const affected = visitTopics.filter(topic => ids.has(topic.id)).sort((a,b) => depth(b) - depth(a))
+    for (const topic of affected) queueVisitDelete('visit_topics', topic.id, topic)
+    queueVisitDelete('visits', visit.id, visit)
+    const nextTopics = visitTopics.filter(topic => !ids.has(topic.id))
+    const nextVisits = visits.filter(item => item.id !== id)
+    setVisitTopics(nextTopics); saveTopicsCache(userId, nextTopics)
+    setVisits(nextVisits); saveVisitsCache(userId, nextVisits)
+    if (selectedVisitId === id) { setSelectedVisitId(nextVisits[0]?.id ?? ''); setEditingVisit(null) }
+    setNotice(isOnline ? 'Visita excluída. Sincronização iniciada.' : 'Visita excluída deste dispositivo e aguardando sincronização.')
+  }
+
+  function deleteVisitTopic(id: string) {
+    const topic = visitTopics.find(item => item.id === id)
+    if (!topic || !userId) return
+    if (!window.confirm('Excluir este assunto? As cópias de continuidade em outras atas também serão excluídas. Esta ação não poderá ser desfeita.')) return
+    const ids = collectTopicDescendants([id])
+    const depth = (item: VisitTopic): number => {
+      let value = 0, parent = item.origin_topic_id
+      while (parent && ids.has(parent)) {
+        value++
+        parent = visitTopics.find(candidate => candidate.id === parent)?.origin_topic_id
+      }
+      return value
+    }
+    const affected = visitTopics.filter(item => ids.has(item.id)).sort((a,b) => depth(b) - depth(a))
+    for (const item of affected) queueVisitDelete('visit_topics', item.id, item)
+    const next = visitTopics.filter(item => !ids.has(item.id))
+    setVisitTopics(next); saveTopicsCache(userId, next)
+    setNotice(isOnline ? 'Assunto excluído. Sincronização iniciada.' : 'Assunto excluído deste dispositivo e aguardando sincronização.')
   }
 
   function queueChange(task: Task, deleted_at: string | null = null) {
@@ -239,7 +309,7 @@ export default function App() {
   }
 
   async function deleteTask(id: string) {
-    if (!window.confirm('Deseja arquivar esta atividade? Ela deixará de aparecer na agenda.')) return
+    if (!window.confirm('Deseja excluir esta atividade? Ela deixará de aparecer na agenda e será removida da sua conta após a sincronização.')) return
     const task = tasks.find(t => t.id === id)
     if (!task) return
     queueChange(task, new Date().toISOString())
@@ -472,7 +542,7 @@ export default function App() {
             <div className="panel-heading list-heading"><div><h2>Suas atividades</h2><p>As atividades ficam salvas na sua conta.</p></div><label className="filter">Status<select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option>Todos</option><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select></label></div>
             <div className="search-line"><Search size={15}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por atividade, descrição ou categoria..."/></div>
             <div className="task-filters"><label>Categoria<select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}><option>Todas</option>{categories.map(c => <option key={c[0]}>{c[0]}</option>)}</select></label><label>Prioridade<select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}><option>Todas</option><option>Baixa</option><option>Média</option><option>Alta</option><option>Urgente</option></select></label><label>Responsável<select value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)}><option>Todas</option>{assignees.map(name => <option key={name}>{name}</option>)}</select></label><label>De<input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}/></label><label>Até<input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)}/></label><button type="button" className="secondary-button" onClick={clearTaskFilters}>Limpar filtros</button></div>
-            {loadingTasks ? <div className="empty"><LoaderCircle className="spin"/><span>Carregando atividades...</span></div> : visibleTasks.length === 0 ? <div className="empty"><CalendarDays size={28}/><strong>Nenhuma atividade por aqui</strong><span>Adicione uma atividade acima para começar.</span></div> : <div className="task-list">{visibleTasks.map(task => <div className={'task-row ' + (task.status !== 'Concluído' && task.due_date < today() ? 'task-overdue' : '')} key={task.id}><div className="task-dot" style={{background: categories.find(c => c[0] === task.category)?.[1]}}/><div className="task-info"><strong>{task.title}</strong><span>{task.category} · {new Date(`${task.due_date}T12:00:00`).toLocaleDateString('pt-BR')}{task.due_time ? ` · ${task.due_time.slice(0,5)}` : ''} · Prioridade {task.priority}{task.assigned_to ? ' · Responsável: ' + task.assigned_to : ''}</span>{task.description && <small>{task.description}</small>}</div><select aria-label={`Status de ${task.title}`} value={task.status} onChange={e => changeStatus(task.id, e.target.value as TaskStatus)}><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select><button type="button" className="icon-button" onClick={() => setEditingTask({...task})} title="Editar atividade"><Pencil size={15}/></button><button type="button" className="icon-button" onClick={() => deleteTask(task.id)} title="Arquivar atividade"><Trash2 size={15}/></button>{editingTask?.id === task.id && <form className="edit-task-form" onSubmit={saveEditedTask}><label>Título<input required value={editingTask.title} onChange={e => setEditingTask({...editingTask,title:e.target.value})}/></label><label>Descrição<input value={editingTask.description ?? ''} onChange={e => setEditingTask({...editingTask,description:e.target.value})}/></label><label>Categoria<select value={editingTask.category} onChange={e => setEditingTask({...editingTask,category:e.target.value})}>{categories.map(item => <option key={item[0]}>{item[0]}</option>)}</select></label><label>Data<input type="date" required value={editingTask.due_date} onChange={e => setEditingTask({...editingTask,due_date:e.target.value})}/></label><label>Horário<input type="time" value={editingTask.due_time ?? ''} onChange={e => setEditingTask({...editingTask,due_time:e.target.value || null})}/></label><label>Prioridade<select value={editingTask.priority} onChange={e => setEditingTask({...editingTask,priority:e.target.value as Priority})}><option>Baixa</option><option>Média</option><option>Alta</option><option>Urgente</option></select></label><label>Responsável pela execução<input value={editingTask.assigned_to ?? ''} onChange={e => setEditingTask({...editingTask,assigned_to:e.target.value || null})} placeholder="Nome do responsável"/></label><label className="calendar-choice"><input type="checkbox" checked={editingTask.show_on_calendar !== false} onChange={e => setEditingTask({...editingTask,show_on_calendar:e.target.checked})}/> Exibir esta tarefa no calendário</label><div className="edit-actions"><button className="primary-button" type="submit">Salvar alterações</button><button className="secondary-button" type="button" onClick={() => setEditingTask(null)}>Cancelar</button></div></form>}</div>)}</div>}
+            {loadingTasks ? <div className="empty"><LoaderCircle className="spin"/><span>Carregando atividades...</span></div> : visibleTasks.length === 0 ? <div className="empty"><CalendarDays size={28}/><strong>Nenhuma atividade por aqui</strong><span>Adicione uma atividade acima para começar.</span></div> : <div className="task-list">{visibleTasks.map(task => <div className={'task-row ' + (task.status !== 'Concluído' && task.due_date < today() ? 'task-overdue' : '')} key={task.id}><div className="task-dot" style={{background: categories.find(c => c[0] === task.category)?.[1]}}/><div className="task-info"><strong>{task.title}</strong><span>{task.category} · {new Date(`${task.due_date}T12:00:00`).toLocaleDateString('pt-BR')}{task.due_time ? ` · ${task.due_time.slice(0,5)}` : ''} · Prioridade {task.priority}{task.assigned_to ? ' · Responsável: ' + task.assigned_to : ''}</span>{task.description && <small>{task.description}</small>}</div><select aria-label={`Status de ${task.title}`} value={task.status} onChange={e => changeStatus(task.id, e.target.value as TaskStatus)}><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select><button type="button" className="icon-button" onClick={() => setEditingTask({...task})} title="Editar atividade"><Pencil size={15}/></button><button type="button" className="icon-button" onClick={() => deleteTask(task.id)} title="Excluir atividade"><Trash2 size={15}/></button>{editingTask?.id === task.id && <form className="edit-task-form" onSubmit={saveEditedTask}><label>Título<input required value={editingTask.title} onChange={e => setEditingTask({...editingTask,title:e.target.value})}/></label><label>Descrição<input value={editingTask.description ?? ''} onChange={e => setEditingTask({...editingTask,description:e.target.value})}/></label><label>Categoria<select value={editingTask.category} onChange={e => setEditingTask({...editingTask,category:e.target.value})}>{categories.map(item => <option key={item[0]}>{item[0]}</option>)}</select></label><label>Data<input type="date" required value={editingTask.due_date} onChange={e => setEditingTask({...editingTask,due_date:e.target.value})}/></label><label>Horário<input type="time" value={editingTask.due_time ?? ''} onChange={e => setEditingTask({...editingTask,due_time:e.target.value || null})}/></label><label>Prioridade<select value={editingTask.priority} onChange={e => setEditingTask({...editingTask,priority:e.target.value as Priority})}><option>Baixa</option><option>Média</option><option>Alta</option><option>Urgente</option></select></label><label>Responsável pela execução<input value={editingTask.assigned_to ?? ''} onChange={e => setEditingTask({...editingTask,assigned_to:e.target.value || null})} placeholder="Nome do responsável"/></label><label className="calendar-choice"><input type="checkbox" checked={editingTask.show_on_calendar !== false} onChange={e => setEditingTask({...editingTask,show_on_calendar:e.target.checked})}/> Exibir esta tarefa no calendário</label><div className="edit-actions"><button className="primary-button" type="submit">Salvar alterações</button><button className="secondary-button" type="button" onClick={() => setEditingTask(null)}>Cancelar</button></div></form>}</div>)}</div>}
           </section>
           <section className="panel calendar-panel">
             <div className="panel-heading"><div><h2>Calendário</h2><p>Somente atividades marcadas para aparecer no calendário.</p></div></div>
@@ -499,7 +569,7 @@ export default function App() {
           </section>
           <section className="panel">
             <div className="panel-heading"><div><h2>Atas registradas</h2><p>Selecione uma visita para consultar ou incluir assuntos.</p></div><span className="soft-tag">{visits.length} VISITA(S)</span></div>
-            {visits.length === 0 ? <div className="empty"><ClipboardList size={28}/><strong>Nenhuma visita cadastrada</strong><span>Cadastre a primeira visita acima. Você também poderá fazer isso off-line.</span></div> : <div className="visit-list">{visits.map(visit => <button key={visit.id} className={'visit-card ' + (selectedVisitId === visit.id ? 'selected' : '')} onClick={() => setSelectedVisitId(visit.id)}><span><strong>{visit.title}</strong><small>{new Date(visit.visit_date + 'T12:00:00').toLocaleDateString('pt-BR')} · {visitTopics.filter(t => t.visit_id === visit.id).length} assunto(s)</small></span><ChevronDown size={16}/></button>)}</div>}
+            {visits.length === 0 ? <div className="empty"><ClipboardList size={28}/><strong>Nenhuma visita cadastrada</strong><span>Cadastre a primeira visita acima. Você também poderá fazer isso off-line.</span></div> : <div className="visit-list">{visits.map(visit => <div className="visit-card-wrap" key={visit.id}><button type="button" className={'visit-card ' + (selectedVisitId === visit.id ? 'selected' : '')} onClick={() => setSelectedVisitId(visit.id)}><span><strong>{visit.title}</strong><small>{new Date(visit.visit_date + 'T12:00:00').toLocaleDateString('pt-BR')} · {visitTopics.filter(t => t.visit_id === visit.id).length} assunto(s)</small></span><ChevronDown size={16}/></button><button type="button" className="icon-button danger-icon" title="Excluir visita" aria-label={'Excluir visita ' + visit.title} onClick={() => deleteVisit(visit.id)}><Trash2 size={15}/></button></div>)}</div>}
           </section>
           {selectedVisitId && visits.some(v => v.id === selectedVisitId) && <section className="panel">
             <div className="panel-heading"><div><h2>Assuntos da ata</h2><p>{visits.find(v => v.id === selectedVisitId)?.title} · {new Date((visits.find(v => v.id === selectedVisitId)?.visit_date ?? today()) + 'T12:00:00').toLocaleDateString('pt-BR')}</p></div><div className="heading-actions"><button type="button" className="secondary-button" onClick={() => setEditingVisit({ ...visits.find(v => v.id === selectedVisitId)! })}><Pencil size={14}/> Editar visita</button><span className="soft-tag">{visitTopics.filter(t => t.visit_id === selectedVisitId).length} ASSUNTO(S)</span><button type="button" className="secondary-button export-button" onClick={exportVisitPdf}><FileDown size={14}/> PDF</button><button type="button" className="secondary-button export-button" onClick={exportVisitExcel}><FileDown size={14}/> Excel</button></div></div>
@@ -522,7 +592,7 @@ export default function App() {
             <div className="carry-panel schedule-panel"><div><strong>Programar assunto para uma data futura</strong><p>Escolha uma pendência e a data. O Watt-Wise criará uma ata nessa data ou aproveitará uma já cadastrada.</p></div><form className="schedule-form" onSubmit={scheduleTopicForDate}><label>Assunto pendente<select required value={scheduledTopicId} onChange={e => setScheduledTopicId(e.target.value)}><option value="">Selecione um assunto</option>{visitTopics.filter(t => t.status !== 'Resolvido' && t.status !== 'Não se aplica').map(t => <option key={t.id} value={t.id}>{t.title} · {visits.find(v => v.id === t.visit_id)?.visit_date ?? 'Sem data'}</option>)}</select></label><label>Data da ata futura<input type="date" required min={today()} value={scheduledDate} onChange={e => setScheduledDate(e.target.value)}/></label><button className="secondary-button" type="submit" disabled={!scheduledTopicId || !scheduledDate}>Programar assunto</button></form></div>
             {visitTopics.filter(t => t.visit_id !== selectedVisitId && t.status !== "Resolvido" && t.status !== "Não se aplica" && !visitTopics.some(copy => copy.visit_id === selectedVisitId && copy.origin_topic_id === t.id)).length > 0 && <div className="carry-panel"><div><strong>Pendências de outras atas</strong><p>Escolha individualmente quais assuntos devem continuar nesta ata.</p></div>{visitTopics.filter(t => t.visit_id !== selectedVisitId && t.status !== "Resolvido" && t.status !== "Não se aplica" && !visitTopics.some(copy => copy.visit_id === selectedVisitId && copy.origin_topic_id === t.id)).map(topic => <div className="carry-row" key={topic.id}><span><strong>{topic.title}</strong><small>{visits.find(v => v.id === topic.visit_id)?.title ?? "Ata anterior"} · {topic.status}</small></span><button type="button" className="secondary-button" onClick={() => carryTopicForward(topic)}>Incluir nesta ata</button></div>)}</div>}
             <div className="panel-heading list-heading topic-list-heading"><div><h2>Assuntos cadastrados</h2><p>Atualize o andamento de cada assunto.</p></div><label className="filter"><select value={topicFilter} onChange={e => setTopicFilter(e.target.value)}><option>Todos</option><option>Pendente</option><option>Em análise</option><option>Resolvido</option><option>Não se aplica</option></select></label></div>
-            {visitTopics.filter(t => t.visit_id === selectedVisitId && (topicFilter === 'Todos' || t.status === topicFilter)).length === 0 ? <div className="empty"><strong>Nenhum assunto cadastrado nesta ata</strong><span>Adicione um assunto no formulário acima.</span></div> : <div className="task-list">{visitTopics.filter(t => t.visit_id === selectedVisitId && (topicFilter === 'Todos' || t.status === topicFilter)).map(topic => <div className="topic-row" key={topic.id}><div className="task-info"><strong>{topic.title}</strong><span>{topic.responsible ? 'Responsável: ' + topic.responsible + ' · ' : ''}{topic.protocol ? 'Protocolo: ' + topic.protocol + ' · ' : ''}{topic.due_date ? 'Prazo: ' + new Date(topic.due_date + 'T12:00:00').toLocaleDateString('pt-BR') : 'Sem prazo'}</span>{topic.description && <small>{topic.description}</small>}{topic.observations && <small>Observações: {topic.observations}</small>}</div><select aria-label={'Status de ' + topic.title} value={topic.status} onChange={e => changeTopicStatus(topic.id, e.target.value as VisitTopic['status'])}><option>Pendente</option><option>Em análise</option><option>Resolvido</option><option>Não se aplica</option></select></div>)}</div>}
+            {visitTopics.filter(t => t.visit_id === selectedVisitId && (topicFilter === 'Todos' || t.status === topicFilter)).length === 0 ? <div className="empty"><strong>Nenhum assunto cadastrado nesta ata</strong><span>Adicione um assunto no formulário acima.</span></div> : <div className="task-list">{visitTopics.filter(t => t.visit_id === selectedVisitId && (topicFilter === 'Todos' || t.status === topicFilter)).map(topic => <div className="topic-row" key={topic.id}><div className="task-info"><strong>{topic.title}</strong><span>{topic.responsible ? 'Responsável: ' + topic.responsible + ' · ' : ''}{topic.protocol ? 'Protocolo: ' + topic.protocol + ' · ' : ''}{topic.due_date ? 'Prazo: ' + new Date(topic.due_date + 'T12:00:00').toLocaleDateString('pt-BR') : 'Sem prazo'}</span>{topic.description && <small>{topic.description}</small>}{topic.observations && <small>Observações: {topic.observations}</small>}</div><select aria-label={'Status de ' + topic.title} value={topic.status} onChange={e => changeTopicStatus(topic.id, e.target.value as VisitTopic['status'])}><option>Pendente</option><option>Em análise</option><option>Resolvido</option><option>Não se aplica</option></select><button type="button" className="icon-button danger-icon" title="Excluir assunto" aria-label={'Excluir assunto ' + topic.title} onClick={() => deleteVisitTopic(topic.id)}><Trash2 size={15}/></button></div>)}</div>}
           </section>}
         </>}
         {section === 'historico' && <section className="panel"><div className="panel-heading"><div><h2>Histórico de movimentações</h2><p>Últimas alterações registradas nas atividades e nos assuntos das atas.</p></div><span className="soft-tag">{historyEvents.length} REGISTRO(S)</span></div>{historyEvents.length === 0 ? <div className="empty"><History size={28}/><strong>Nenhuma movimentação encontrada</strong><span>As próximas inclusões e alterações aparecerão aqui após a sincronização.</span></div> : <div className="history-list">{historyEvents.map(event => { const value = event.new_value ?? {}; const old = event.old_value ?? {}; const label = event.event_type === 'created' ? 'Criado' : event.event_type === 'status_changed' ? 'Status alterado' : event.event_type === 'schedule_changed' ? 'Data ou horário alterado' : 'Dados atualizados'; const detail = event.event_type === 'status_changed' ? `${old.status ?? '—'} → ${value.status ?? '—'}` : event.event_type === 'schedule_changed' ? `${old.date ?? '—'} ${old.time ?? ''} → ${value.date ?? '—'} ${value.time ?? ''}` : (value.title ?? old.title ?? 'Registro atualizado'); return <article className="history-item" key={event.id}><span className="history-marker"/><div className="history-copy"><div><strong>{detail}</strong><span className="history-kind">{event.entity_type} · {label}</span></div><time>{new Date(event.created_at).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})}</time></div></article> })}</div>}</section>}
