@@ -30,3 +30,10 @@
 
 /* Campos ampliados da ata Cemig */
 .notes-field textarea,.form-grid textarea{width:100%;min-width:0;resize:vertical;border:1px solid #e1e9e5;border-radius:7px;padding:11px;color:#405a56;background:#fff;font:inherit;font-size:12px;line-height:1.55;min-height:150px}.form-grid textarea:focus{outline:2px solid #c7ded2;border-color:#9ab9a8}.notes-field{grid-column:1/-1}
+
+/* Ações de exclusão em visitas e assuntos */
+.visit-card-wrap{display:flex;align-items:stretch;gap:8px}
+.visit-card-wrap .visit-card{flex:1;min-width:0}
+.danger-icon{color:#b65b55;border-color:#f0d8d6}
+.danger-icon:hover{background:#fff1f0;border-color:#e7b8b4}
+.topic-row .danger-icon{flex:0 0 auto}
