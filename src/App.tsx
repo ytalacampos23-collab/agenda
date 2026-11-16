@@ -56,6 +56,8 @@ export default function App() {
   const [topicDueDate, setTopicDueDate] = useState('')
   const [topicObservations, setTopicObservations] = useState('')
   const [topicFilter, setTopicFilter] = useState('Todos')
+  const [scheduledTopicId, setScheduledTopicId] = useState('')
+  const [scheduledDate, setScheduledDate] = useState('')
   const [loadingTasks, setLoadingTasks] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -263,6 +265,37 @@ export default function App() {
     queueVisitChange('topic_transfers', transfer)
     setNotice('Assunto incluído nesta ata, mantendo o vínculo com a ata de origem.')
   }
+  function scheduleTopicForDate(event: FormEvent) {
+    event.preventDefault()
+    const source = visitTopics.find(item => item.id === scheduledTopicId)
+    if (!userId || !source || !scheduledDate) return
+    const targetVisit = visits.find(item => item.visit_date === scheduledDate)
+    const destination: Visit = targetVisit ?? {
+      id: crypto.randomUUID(), user_id: userId, visit_date: scheduledDate,
+      title: 'Ata programada - ' + new Date(scheduledDate + 'T12:00:00').toLocaleDateString('pt-BR'),
+      participants: null, notes: 'Ata criada automaticamente para receber assunto programado.'
+    }
+    if (visitTopics.some(item => item.visit_id === destination.id && item.origin_topic_id === source.id)) {
+      setNotice('Este assunto já está programado para essa ata.')
+      return
+    }
+    if (!targetVisit) {
+      const nextVisits = [destination, ...visits].sort((a,b) => b.visit_date.localeCompare(a.visit_date))
+      setVisits(nextVisits); saveVisitsCache(userId, nextVisits); queueVisitChange('visits', destination)
+    }
+    const scheduledCopy: VisitTopic = {
+      ...source, id: crypto.randomUUID(), visit_id: destination.id, user_id: userId,
+      status: 'Pendente', origin_topic_id: source.id,
+      observations: [source.observations, 'Programado para a ata de ' + new Date(scheduledDate + 'T12:00:00').toLocaleDateString('pt-BR')].filter(Boolean).join(' · ') || null
+    }
+    const nextTopics = [...visitTopics, scheduledCopy]
+    setVisitTopics(nextTopics); saveTopicsCache(userId, nextTopics); queueVisitChange('visit_topics', scheduledCopy)
+    queueVisitChange('topic_transfers', { id: crypto.randomUUID(), topic_id: source.id, from_visit_id: source.visit_id, to_visit_id: destination.id, user_id: userId })
+    setSelectedVisitId(destination.id)
+    setScheduledTopicId(''); setScheduledDate('')
+    setNotice('Assunto programado para ' + new Date(scheduledDate + 'T12:00:00').toLocaleDateString('pt-BR') + '. A ata de destino foi criada ou reutilizada.')
+  }
+
   function changeTopicStatus(id: string, status: VisitTopic['status']) {
     const topic = visitTopics.find(item => item.id === id)
     if (!topic) return
@@ -363,6 +396,7 @@ export default function App() {
               <label className="wide">Observações<input value={topicObservations} onChange={e => setTopicObservations(e.target.value)} placeholder="Observações e encaminhamentos"/></label>
               <div className="wide form-action"><button className="primary-button"><Plus size={17}/>Adicionar assunto</button></div>
             </form>
+            <div className="carry-panel schedule-panel"><div><strong>Programar assunto para uma data futura</strong><p>Escolha uma pendência e a data. O Watt-Wise criará uma ata nessa data ou aproveitará uma já cadastrada.</p></div><form className="schedule-form" onSubmit={scheduleTopicForDate}><label>Assunto pendente<select required value={scheduledTopicId} onChange={e => setScheduledTopicId(e.target.value)}><option value="">Selecione um assunto</option>{visitTopics.filter(t => t.status !== 'Resolvido' && t.status !== 'Não se aplica').map(t => <option key={t.id} value={t.id}>{t.title} · {visits.find(v => v.id === t.visit_id)?.visit_date ?? 'Sem data'}</option>)}</select></label><label>Data da ata futura<input type="date" required min={today()} value={scheduledDate} onChange={e => setScheduledDate(e.target.value)}/></label><button className="secondary-button" type="submit" disabled={!scheduledTopicId || !scheduledDate}>Programar assunto</button></form></div>
             {visitTopics.filter(t => t.visit_id !== selectedVisitId && t.status !== "Resolvido" && t.status !== "Não se aplica" && !visitTopics.some(copy => copy.visit_id === selectedVisitId && copy.origin_topic_id === t.id)).length > 0 && <div className="carry-panel"><div><strong>Pendências de outras atas</strong><p>Escolha individualmente quais assuntos devem continuar nesta ata.</p></div>{visitTopics.filter(t => t.visit_id !== selectedVisitId && t.status !== "Resolvido" && t.status !== "Não se aplica" && !visitTopics.some(copy => copy.visit_id === selectedVisitId && copy.origin_topic_id === t.id)).map(topic => <div className="carry-row" key={topic.id}><span><strong>{topic.title}</strong><small>{visits.find(v => v.id === topic.visit_id)?.title ?? "Ata anterior"} · {topic.status}</small></span><button type="button" className="secondary-button" onClick={() => carryTopicForward(topic)}>Incluir nesta ata</button></div>)}</div>}
             <div className="panel-heading list-heading topic-list-heading"><div><h2>Assuntos cadastrados</h2><p>Atualize o andamento de cada assunto.</p></div><label className="filter"><select value={topicFilter} onChange={e => setTopicFilter(e.target.value)}><option>Todos</option><option>Pendente</option><option>Em análise</option><option>Resolvido</option><option>Não se aplica</option></select></label></div>
             {visitTopics.filter(t => t.visit_id === selectedVisitId && (topicFilter === 'Todos' || t.status === topicFilter)).length === 0 ? <div className="empty"><strong>Nenhum assunto cadastrado nesta ata</strong><span>Adicione um assunto no formulário acima.</span></div> : <div className="task-list">{visitTopics.filter(t => t.visit_id === selectedVisitId && (topicFilter === 'Todos' || t.status === topicFilter)).map(topic => <div className="topic-row" key={topic.id}><div className="task-info"><strong>{topic.title}</strong><span>{topic.responsible ? 'Responsável: ' + topic.responsible + ' · ' : ''}{topic.protocol ? 'Protocolo: ' + topic.protocol + ' · ' : ''}{topic.due_date ? 'Prazo: ' + new Date(topic.due_date + 'T12:00:00').toLocaleDateString('pt-BR') : 'Sem prazo'}</span>{topic.description && <small>{topic.description}</small>}{topic.observations && <small>Observações: {topic.observations}</small>}</div><select aria-label={'Status de ' + topic.title} value={topic.status} onChange={e => changeTopicStatus(topic.id, e.target.value as VisitTopic['status'])}><option>Pendente</option><option>Em análise</option><option>Resolvido</option><option>Não se aplica</option></select></div>)}</div>}
