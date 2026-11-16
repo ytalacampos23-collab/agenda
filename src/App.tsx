@@ -61,7 +61,6 @@ export default function App() {
       setUserEmail(session?.user.email ?? '')
       setUserId(session?.user.id ?? '')
       if (session?.user) localStorage.setItem('wattwise:offline-user', JSON.stringify({ id: session.user.id, email: session.user.email ?? '' }))
-      setTasks([])
     })
     return () => listener.subscription.unsubscribe()
   }, [])
@@ -113,8 +112,6 @@ export default function App() {
     return () => { cancelled = true }
   }, [userId, isOnline, syncVersion])
 
-  useEffect(() => { if (userId) saveTaskCache(userId, tasks) }, [userId, tasks])
-
   function queueChange(task: Task, deleted_at: string | null = null) {
     if (!userId) return
     const queue = readJson<PendingChange[]>(queueKey(userId), [])
@@ -145,7 +142,8 @@ export default function App() {
     if (!userId || !title.trim()) return
     setError(''); setNotice('')
     const task: Task = { id: crypto.randomUUID(), title: title.trim(), description: description.trim() || null, category, due_date: date, due_time: time || null, priority, status: 'A fazer', deleted_at: null }
-    setTasks(current => [...current, task].sort((a,b) => a.due_date.localeCompare(b.due_date)))
+    const nextTasks = [...tasks, task].sort((a,b) => a.due_date.localeCompare(b.due_date))
+    setTasks(nextTasks); saveTaskCache(userId, nextTasks)
     queueChange(task)
     setTitle(''); setDescription(''); setTime(''); setPriority('Média'); setDate(today())
     setNotice(isOnline ? 'Atividade salva neste dispositivo e enviada para sincronização.' : 'Atividade salva neste dispositivo. Será sincronizada quando a internet voltar.')
@@ -155,7 +153,8 @@ export default function App() {
     const task = tasks.find(t => t.id === id)
     if (!task) return
     const updated = { ...task, status }
-    setTasks(current => current.map(t => t.id === id ? updated : t))
+    const nextTasks = tasks.map(t => t.id === id ? updated : t)
+    setTasks(nextTasks); saveTaskCache(userId, nextTasks)
     queueChange(updated)
     setNotice(isOnline ? 'Status atualizado. Sincronização iniciada.' : 'Status atualizado neste dispositivo e aguardando sincronização.')
   }
@@ -165,7 +164,8 @@ export default function App() {
     const task = tasks.find(t => t.id === id)
     if (!task) return
     queueChange(task, new Date().toISOString())
-    setTasks(current => current.filter(t => t.id !== id))
+    const nextTasks = tasks.filter(t => t.id !== id)
+    setTasks(nextTasks); saveTaskCache(userId, nextTasks)
     setNotice(isOnline ? 'Atividade arquivada. Sincronização iniciada.' : 'Atividade arquivada neste dispositivo e aguardando sincronização.')
   }
 
