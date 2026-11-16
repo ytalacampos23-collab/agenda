@@ -26,3 +26,7 @@
 
 .calendar-choice{display:flex!important;flex-direction:row!important;align-items:center;gap:9px!important;align-self:end;padding:10px 12px;border:1px solid #e1e9e5;border-radius:8px;background:#f8fbf9;color:#506762!important;font-size:11px!important}.calendar-choice input{width:15px!important;height:15px;accent-color:#527c68}.calendar-panel{margin-top:18px}.calendar-panel .calendar-toolbar{margin-top:4px}
 @media(max-width:620px){.calendar-choice{grid-column:1/-1}}
+
+
+/* Campos ampliados da ata Cemig */
+.notes-field textarea,.form-grid textarea{width:100%;min-width:0;resize:vertical;border:1px solid #e1e9e5;border-radius:7px;padding:11px;color:#405a56;background:#fff;font:inherit;font-size:12px;line-height:1.55;min-height:150px}.form-grid textarea:focus{outline:2px solid #c7ded2;border-color:#9ab9a8}.notes-field{grid-column:1/-1}
