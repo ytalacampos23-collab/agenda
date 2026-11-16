@@ -6,11 +6,17 @@ type TaskStatus = 'A fazer' | 'Em andamento' | 'Concluído'
 type Priority = 'Baixa' | 'Média' | 'Alta' | 'Urgente'
 type Task = { id: string; title: string; description: string | null; category: string; due_date: string; due_time: string | null; status: TaskStatus; priority: Priority; deleted_at?: string | null }
 type PendingChange = { id: string; task: Task; deleted_at: string | null }
+type Visit = { id: string; user_id: string; visit_date: string; title: string; participants: string | null; notes: string | null; created_at?: string }
+type VisitTopic = { id: string; visit_id: string; user_id: string; title: string; description: string | null; responsible: string | null; protocol: string | null; due_date: string | null; status: 'Pendente' | 'Em análise' | 'Resolvido' | 'Não se aplica'; observations: string | null }
+type PendingVisitChange = { table: 'visits' | 'visit_topics'; id: string; record: Visit | VisitTopic }
 const cacheKey = (id: string) => 'wattwise:' + id + ':tasks'
 const queueKey = (id: string) => 'wattwise:' + id + ':queue'
 const readJson = <T,>(key: string, fallback: T): T => { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : fallback } catch { return fallback } }
 const savePending = (id: string, queue: PendingChange[]) => localStorage.setItem(queueKey(id), JSON.stringify(queue))
 const saveTaskCache = (id: string, tasks: Task[]) => localStorage.setItem(cacheKey(id), JSON.stringify(tasks))
+const visitCacheKey = (id: string) => 'wattwise:' + id + ':visits'
+const topicCacheKey = (id: string) => 'wattwise:' + id + ':visit-topics'
+const visitQueueKey = (id: string) => 'wattwise:' + id + ':visit-queue'
 
 const categories = [
   ['Cemig', '#B9D3F2'], ['Ouvidorias', '#D9C7F0'], ['Auditorias', '#F6D6B8'],
@@ -34,7 +40,7 @@ export default function App() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [authBusy, setAuthBusy] = useState(false)
-  const [tasks, setTasks] = useState<Task[]>([])
+  const [tasks, setTasks] = useState<Task[]>([])\n  const [visits, setVisits] = useState<Visit[]>([])\n  const [visitTopics, setVisitTopics] = useState<VisitTopic[]>([])\n  const [selectedVisitId, setSelectedVisitId] = useState('')\n  const [visitDate, setVisitDate] = useState(today())\n  const [visitTitle, setVisitTitle] = useState('Visita à Cemig')\n  const [participants, setParticipants] = useState('')\n  const [visitNotes, setVisitNotes] = useState('')\n  const [topicTitle, setTopicTitle] = useState('')\n  const [topicDescription, setTopicDescription] = useState('')\n  const [topicResponsible, setTopicResponsible] = useState('')\n  const [topicProtocol, setTopicProtocol] = useState('')\n  const [topicDueDate, setTopicDueDate] = useState('')\n  const [topicObservations, setTopicObservations] = useState('')\n  const [topicFilter, setTopicFilter] = useState('Todos')
   const [loadingTasks, setLoadingTasks] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -90,7 +96,7 @@ export default function App() {
           savePending(userId, queue)
           if (!cancelled) setPendingCount(queue.length)
         }
-        const result = await supabase!.from('tasks').select('id,title,description,category,due_date,due_time,status,priority,deleted_at').order('due_date', { ascending: true })
+        let visitChanges = readJson<PendingVisitChange[]>(visitQueueKey(userId), [])\n        for (const change of [...visitChanges].sort((a,b) => (a.table === 'visits' ? 0 : 1) - (b.table === 'visits' ? 0 : 1))) {\n          const result = await supabase!.from(change.table).upsert(change.record, { onConflict: 'id' })\n          if (result.error) throw result.error\n          visitChanges = visitChanges.filter(item => !(item.table === change.table && item.id === change.id))\n          localStorage.setItem(visitQueueKey(userId), JSON.stringify(visitChanges))\n        }\n        const result = await supabase!.from('tasks').select('id,title,description,category,due_date,due_time,status,priority,deleted_at').order('due_date', { ascending: true })
         if (result.error) throw result.error
         if (!cancelled) {
           const merged = ((result.data ?? []) as Task[]).filter(t => !t.deleted_at)
@@ -102,7 +108,7 @@ export default function App() {
             else merged.push(change.task)
           }
           merged.sort((x,y) => x.due_date.localeCompare(y.due_date))
-          setTasks(merged); saveTaskCache(userId, merged); setError('')
+          setTasks(merged); saveTaskCache(userId, merged)\n          const [visitResult, topicResult] = await Promise.all([supabase!.from('visits').select('*').order('visit_date', { ascending: false }), supabase!.from('visit_topics').select('*').order('created_at', { ascending: true })])\n          if (visitResult.error) throw visitResult.error\n          if (topicResult.error) throw topicResult.error\n          setVisits((visitResult.data ?? []) as Visit[]); saveVisitsCache(userId, (visitResult.data ?? []) as Visit[])\n          setVisitTopics((topicResult.data ?? []) as VisitTopic[]); saveTopicsCache(userId, (topicResult.data ?? []) as VisitTopic[])\n          setError('')
         }
       } catch (e) {
         if (!cancelled) setError('Sincronização pendente. Seus dados continuam salvos neste dispositivo. ' + (e instanceof Error ? e.message : ''))
@@ -112,7 +118,7 @@ export default function App() {
     return () => { cancelled = true }
   }, [userId, isOnline, syncVersion])
 
-  function queueChange(task: Task, deleted_at: string | null = null) {
+  const saveVisitsCache = (id: string, rows: Visit[]) => localStorage.setItem(visitCacheKey(id), JSON.stringify(rows))\n  const saveTopicsCache = (id: string, rows: VisitTopic[]) => localStorage.setItem(topicCacheKey(id), JSON.stringify(rows))\n\n  function queueVisitChange(table: 'visits' | 'visit_topics', record: Visit | VisitTopic) {\n    if (!userId) return\n    const queue = readJson<PendingVisitChange[]>(visitQueueKey(userId), [])\n    const next = [...queue.filter(item => !(item.table === table && item.id === record.id)), { table, id: record.id, record }]\n    localStorage.setItem(visitQueueKey(userId), JSON.stringify(next))\n    setPendingCount(readJson<PendingChange[]>(queueKey(userId), []).length + next.length)\n    setSyncVersion(v => v + 1)\n  }\n\n  function queueChange(task: Task, deleted_at: string | null = null) {
     if (!userId) return
     const queue = readJson<PendingChange[]>(queueKey(userId), [])
     const next = [...queue.filter(item => item.id !== task.id), { id: task.id, task, deleted_at }]
@@ -167,6 +173,35 @@ export default function App() {
     const nextTasks = tasks.filter(t => t.id !== id)
     setTasks(nextTasks); saveTaskCache(userId, nextTasks)
     setNotice(isOnline ? 'Atividade arquivada. Sincronização iniciada.' : 'Atividade arquivada neste dispositivo e aguardando sincronização.')
+  }
+
+  function addVisit(event: FormEvent) {
+    event.preventDefault()
+    if (!userId || !visitTitle.trim()) return
+    const visit: Visit = { id: crypto.randomUUID(), user_id: userId, visit_date: visitDate, title: visitTitle.trim(), participants: participants.trim() || null, notes: visitNotes.trim() || null }
+    const next = [visit, ...visits].sort((a,b) => b.visit_date.localeCompare(a.visit_date))
+    setVisits(next); saveVisitsCache(userId, next); setSelectedVisitId(visit.id); queueVisitChange('visits', visit)
+    setVisitTitle('Visita à Cemig'); setParticipants(''); setVisitNotes('')
+    setNotice(isOnline ? 'Visita registrada e enviada para sincronização.' : 'Visita salva neste dispositivo. Será sincronizada quando a internet voltar.')
+  }
+
+  function addVisitTopic(event: FormEvent) {
+    event.preventDefault()
+    if (!userId || !selectedVisitId || !topicTitle.trim()) return
+    const topic: VisitTopic = { id: crypto.randomUUID(), visit_id: selectedVisitId, user_id: userId, title: topicTitle.trim(), description: topicDescription.trim() || null, responsible: topicResponsible.trim() || null, protocol: topicProtocol.trim() || null, due_date: topicDueDate || null, status: 'Pendente', observations: topicObservations.trim() || null }
+    const next = [...visitTopics, topic]
+    setVisitTopics(next); saveTopicsCache(userId, next); queueVisitChange('visit_topics', topic)
+    setTopicTitle(''); setTopicDescription(''); setTopicResponsible(''); setTopicProtocol(''); setTopicDueDate(''); setTopicObservations('')
+    setNotice(isOnline ? 'Assunto registrado e enviado para sincronização.' : 'Assunto salvo neste dispositivo. Será sincronizado quando a internet voltar.')
+  }
+
+  function changeTopicStatus(id: string, status: VisitTopic['status']) {
+    const topic = visitTopics.find(item => item.id === id)
+    if (!topic) return
+    const updated = { ...topic, status }
+    const next = visitTopics.map(item => item.id === id ? updated : item)
+    setVisitTopics(next); saveTopicsCache(userId, next); queueVisitChange('visit_topics', updated)
+    setNotice(isOnline ? 'Status do assunto atualizado.' : 'Status atualizado off-line e aguardando sincronização.')
   }
 
   async function signOut() { if (supabase) await supabase.auth.signOut(); setTasks([]); setNotice('Você saiu da sua conta.') }
@@ -228,7 +263,42 @@ export default function App() {
             {loadingTasks ? <div className="empty"><LoaderCircle className="spin"/><span>Carregando atividades...</span></div> : visibleTasks.length === 0 ? <div className="empty"><CalendarDays size={28}/><strong>Nenhuma atividade por aqui</strong><span>Adicione uma atividade acima para começar.</span></div> : <div className="task-list">{visibleTasks.map(task => <div className="task-row" key={task.id}><div className="task-dot" style={{background: categories.find(c => c[0] === task.category)?.[1]}}/><div className="task-info"><strong>{task.title}</strong><span>{task.category} · {new Date(`${task.due_date}T12:00:00`).toLocaleDateString('pt-BR')}{task.due_time ? ` · ${task.due_time.slice(0,5)}` : ''} · Prioridade {task.priority}</span>{task.description && <small>{task.description}</small>}</div><select aria-label={`Status de ${task.title}`} value={task.status} onChange={e => changeStatus(task.id, e.target.value as TaskStatus)}><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select><button className="icon-button" onClick={() => deleteTask(task.id)} title="Arquivar atividade"><Trash2 size={15}/></button></div>)}</div>}
           </section>
         </>}
-        {section === 'visitas' && <section className="panel coming"><div className="coming-icon"><ClipboardList size={28}/></div><h2>Atas e acompanhamentos da Cemig</h2><p>Esta área será implementada na próxima etapa, incluindo tópicos individuais, responsáveis, protocolos, prazos e continuidade manual de pendências entre atas.</p><ul><li>Uma ata por visita, com quantos tópicos forem necessários.</li><li>Sugestão de pendências para a próxima ata, sempre com sua aprovação.</li><li>Histórico preservado e vínculo com a ata de origem.</li></ul></section>}
+        {section === 'visitas' && <>
+          <div className="stats">
+            <div className="stat-card"><span>Visitas registradas</span><strong>{visits.length}</strong><ClipboardList/></div>
+            <div className="stat-card"><span>Assuntos pendentes</span><strong>{visitTopics.filter(t => t.status === 'Pendente').length}</strong><AlertCircle/></div>
+            <div className="stat-card"><span>Em análise</span><strong>{visitTopics.filter(t => t.status === 'Em análise').length}</strong><Clock3/></div>
+            <div className="stat-card"><span>Resolvidos</span><strong>{visitTopics.filter(t => t.status === 'Resolvido').length}</strong><CheckCircle2/></div>
+          </div>
+          <section className="panel">
+            <div className="panel-heading"><div><h2>Registrar visita / ata</h2><p>Cadastre uma visita e seus dados principais.</p></div><span className="soft-tag">NOVA VISITA</span></div>
+            <form className="form-grid" onSubmit={addVisit}>
+              <label>Data da visita<input type="date" required value={visitDate} onChange={e => setVisitDate(e.target.value)}/></label>
+              <label className="wide">Título da ata<input required value={visitTitle} onChange={e => setVisitTitle(e.target.value)}/></label>
+              <label className="wide">Participantes<input value={participants} onChange={e => setParticipants(e.target.value)} placeholder="Nomes dos participantes"/></label>
+              <label className="wide">Observações gerais<input value={visitNotes} onChange={e => setVisitNotes(e.target.value)} placeholder="Anotações da visita"/></label>
+              <div className="wide form-action"><button className="primary-button"><Plus size={17}/>Salvar visita</button></div>
+            </form>
+          </section>
+          <section className="panel">
+            <div className="panel-heading"><div><h2>Atas registradas</h2><p>Selecione uma visita para consultar ou incluir assuntos.</p></div><span className="soft-tag">{visits.length} VISITA(S)</span></div>
+            {visits.length === 0 ? <div className="empty"><ClipboardList size={28}/><strong>Nenhuma visita cadastrada</strong><span>Cadastre a primeira visita acima. Você também poderá fazer isso off-line.</span></div> : <div className="visit-list">{visits.map(visit => <button key={visit.id} className={'visit-card ' + (selectedVisitId === visit.id ? 'selected' : '')} onClick={() => setSelectedVisitId(visit.id)}><span><strong>{visit.title}</strong><small>{new Date(visit.visit_date + 'T12:00:00').toLocaleDateString('pt-BR')} · {visitTopics.filter(t => t.visit_id === visit.id).length} assunto(s)</small></span><ChevronDown size={16}/></button>)}</div>}
+          </section>
+          {selectedVisitId && visits.some(v => v.id === selectedVisitId) && <section className="panel">
+            <div className="panel-heading"><div><h2>Assuntos da ata</h2><p>{visits.find(v => v.id === selectedVisitId)?.title} · {new Date((visits.find(v => v.id === selectedVisitId)?.visit_date ?? today()) + 'T12:00:00').toLocaleDateString('pt-BR')}</p></div><span className="soft-tag">{visitTopics.filter(t => t.visit_id === selectedVisitId).length} ASSUNTO(S)</span></div>
+            <form className="form-grid" onSubmit={addVisitTopic}>
+              <label className="wide">Assunto<input required value={topicTitle} onChange={e => setTopicTitle(e.target.value)} placeholder="Ex.: Retorno sobre solicitação"/></label>
+              <label className="wide">Descrição<input value={topicDescription} onChange={e => setTopicDescription(e.target.value)} placeholder="Detalhes do assunto"/></label>
+              <label>Responsável<input value={topicResponsible} onChange={e => setTopicResponsible(e.target.value)} placeholder="Responsável"/></label>
+              <label>Protocolo<input value={topicProtocol} onChange={e => setTopicProtocol(e.target.value)} placeholder="Nº do protocolo"/></label>
+              <label>Prazo<input type="date" value={topicDueDate} onChange={e => setTopicDueDate(e.target.value)}/></label>
+              <label className="wide">Observações<input value={topicObservations} onChange={e => setTopicObservations(e.target.value)} placeholder="Observações e encaminhamentos"/></label>
+              <div className="wide form-action"><button className="primary-button"><Plus size={17}/>Adicionar assunto</button></div>
+            </form>
+            <div className="panel-heading list-heading topic-list-heading"><div><h2>Assuntos cadastrados</h2><p>Atualize o andamento de cada assunto.</p></div><label className="filter"><select value={topicFilter} onChange={e => setTopicFilter(e.target.value)}><option>Todos</option><option>Pendente</option><option>Em análise</option><option>Resolvido</option><option>Não se aplica</option></select></label></div>
+            {visitTopics.filter(t => t.visit_id === selectedVisitId && (topicFilter === 'Todos' || t.status === topicFilter)).length === 0 ? <div className="empty"><strong>Nenhum assunto cadastrado nesta ata</strong><span>Adicione um assunto no formulário acima.</span></div> : <div className="task-list">{visitTopics.filter(t => t.visit_id === selectedVisitId && (topicFilter === 'Todos' || t.status === topicFilter)).map(topic => <div className="topic-row" key={topic.id}><div className="task-info"><strong>{topic.title}</strong><span>{topic.responsible ? 'Responsável: ' + topic.responsible + ' · ' : ''}{topic.protocol ? 'Protocolo: ' + topic.protocol + ' · ' : ''}{topic.due_date ? 'Prazo: ' + new Date(topic.due_date + 'T12:00:00').toLocaleDateString('pt-BR') : 'Sem prazo'}</span>{topic.description && <small>{topic.description}</small>}{topic.observations && <small>Observações: {topic.observations}</small>}</div><select aria-label={'Status de ' + topic.title} value={topic.status} onChange={e => changeTopicStatus(topic.id, e.target.value as VisitTopic['status'])}><option>Pendente</option><option>Em análise</option><option>Resolvido</option><option>Não se aplica</option></select></div>)}</div>}
+          </section>}
+        </>}
         {section === 'historico' && <section className="panel coming"><div className="coming-icon"><History size={28}/></div><h2>Histórico de movimentações</h2><p>O banco já registra automaticamente as alterações de status e de dados das atividades. A tela de consulta do histórico será ligada na próxima etapa.</p></section>}
         <footer>Watt-Wise <span>•</span> Em desenvolvimento</footer>
       </div>
