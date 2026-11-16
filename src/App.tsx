@@ -112,7 +112,7 @@ export default function App() {
         }
         let visitChanges = readJson<PendingVisitChange[]>(visitQueueKey(userId), [])
         for (const change of [...visitChanges].sort((a,b) => (a.table === 'visits' ? 0 : 1) - (b.table === 'visits' ? 0 : 1))) {
-          const result = await supabase!.from(change.table).upsert(change.record, { onConflict: 'id' })
+          const result = await supabase!.from(change.table).upsert(change.record as any, { onConflict: 'id' })
           if (result.error) throw result.error
           visitChanges = visitChanges.filter(item => !(item.table === change.table && item.id === change.id))
           localStorage.setItem(visitQueueKey(userId), JSON.stringify(visitChanges))
