@@ -40,7 +40,21 @@ export default function App() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [authBusy, setAuthBusy] = useState(false)
-  const [tasks, setTasks] = useState<Task[]>([])\n  const [visits, setVisits] = useState<Visit[]>([])\n  const [visitTopics, setVisitTopics] = useState<VisitTopic[]>([])\n  const [selectedVisitId, setSelectedVisitId] = useState('')\n  const [visitDate, setVisitDate] = useState(today())\n  const [visitTitle, setVisitTitle] = useState('Visita à Cemig')\n  const [participants, setParticipants] = useState('')\n  const [visitNotes, setVisitNotes] = useState('')\n  const [topicTitle, setTopicTitle] = useState('')\n  const [topicDescription, setTopicDescription] = useState('')\n  const [topicResponsible, setTopicResponsible] = useState('')\n  const [topicProtocol, setTopicProtocol] = useState('')\n  const [topicDueDate, setTopicDueDate] = useState('')\n  const [topicObservations, setTopicObservations] = useState('')\n  const [topicFilter, setTopicFilter] = useState('Todos')
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [visits, setVisits] = useState<Visit[]>([])
+  const [visitTopics, setVisitTopics] = useState<VisitTopic[]>([])
+  const [selectedVisitId, setSelectedVisitId] = useState('')
+  const [visitDate, setVisitDate] = useState(today())
+  const [visitTitle, setVisitTitle] = useState('Visita à Cemig')
+  const [participants, setParticipants] = useState('')
+  const [visitNotes, setVisitNotes] = useState('')
+  const [topicTitle, setTopicTitle] = useState('')
+  const [topicDescription, setTopicDescription] = useState('')
+  const [topicResponsible, setTopicResponsible] = useState('')
+  const [topicProtocol, setTopicProtocol] = useState('')
+  const [topicDueDate, setTopicDueDate] = useState('')
+  const [topicObservations, setTopicObservations] = useState('')
+  const [topicFilter, setTopicFilter] = useState('Todos')
   const [loadingTasks, setLoadingTasks] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -96,7 +110,14 @@ export default function App() {
           savePending(userId, queue)
           if (!cancelled) setPendingCount(queue.length + readJson<PendingVisitChange[]>(visitQueueKey(userId), []).length)
         }
-        let visitChanges = readJson<PendingVisitChange[]>(visitQueueKey(userId), [])\n        for (const change of [...visitChanges].sort((a,b) => (a.table === 'visits' ? 0 : 1) - (b.table === 'visits' ? 0 : 1))) {\n          const result = await supabase!.from(change.table).upsert(change.record, { onConflict: 'id' })\n          if (result.error) throw result.error\n          visitChanges = visitChanges.filter(item => !(item.table === change.table && item.id === change.id))\n          localStorage.setItem(visitQueueKey(userId), JSON.stringify(visitChanges))\n        }\n        const result = await supabase!.from('tasks').select('id,title,description,category,due_date,due_time,status,priority,deleted_at').order('due_date', { ascending: true })
+        let visitChanges = readJson<PendingVisitChange[]>(visitQueueKey(userId), [])
+        for (const change of [...visitChanges].sort((a,b) => (a.table === 'visits' ? 0 : 1) - (b.table === 'visits' ? 0 : 1))) {
+          const result = await supabase!.from(change.table).upsert(change.record, { onConflict: 'id' })
+          if (result.error) throw result.error
+          visitChanges = visitChanges.filter(item => !(item.table === change.table && item.id === change.id))
+          localStorage.setItem(visitQueueKey(userId), JSON.stringify(visitChanges))
+        }
+        const result = await supabase!.from('tasks').select('id,title,description,category,due_date,due_time,status,priority,deleted_at').order('due_date', { ascending: true })
         if (result.error) throw result.error
         if (!cancelled) {
           const merged = ((result.data ?? []) as Task[]).filter(t => !t.deleted_at)
@@ -108,7 +129,14 @@ export default function App() {
             else merged.push(change.task)
           }
           merged.sort((x,y) => x.due_date.localeCompare(y.due_date))
-          setTasks(merged); saveTaskCache(userId, merged)\n          const [visitResult, topicResult] = await Promise.all([supabase!.from('visits').select('*').order('visit_date', { ascending: false }), supabase!.from('visit_topics').select('*').order('created_at', { ascending: true })])\n          if (visitResult.error) throw visitResult.error\n          if (topicResult.error) throw topicResult.error\n          setVisits((visitResult.data ?? []) as Visit[]); saveVisitsCache(userId, (visitResult.data ?? []) as Visit[])\n          setVisitTopics((topicResult.data ?? []) as VisitTopic[]); saveTopicsCache(userId, (topicResult.data ?? []) as VisitTopic[])\n          setPendingCount(readJson<PendingChange[]>(queueKey(userId), []).length + readJson<PendingVisitChange[]>(visitQueueKey(userId), []).length)\n          setError('')
+          setTasks(merged); saveTaskCache(userId, merged)
+          const [visitResult, topicResult] = await Promise.all([supabase!.from('visits').select('*').order('visit_date', { ascending: false }), supabase!.from('visit_topics').select('*').order('created_at', { ascending: true })])
+          if (visitResult.error) throw visitResult.error
+          if (topicResult.error) throw topicResult.error
+          setVisits((visitResult.data ?? []) as Visit[]); saveVisitsCache(userId, (visitResult.data ?? []) as Visit[])
+          setVisitTopics((topicResult.data ?? []) as VisitTopic[]); saveTopicsCache(userId, (topicResult.data ?? []) as VisitTopic[])
+          setPendingCount(readJson<PendingChange[]>(queueKey(userId), []).length + readJson<PendingVisitChange[]>(visitQueueKey(userId), []).length)
+          setError('')
         }
       } catch (e) {
         if (!cancelled) setError('Sincronização pendente. Seus dados continuam salvos neste dispositivo. ' + (e instanceof Error ? e.message : ''))
@@ -118,7 +146,19 @@ export default function App() {
     return () => { cancelled = true }
   }, [userId, isOnline, syncVersion])
 
-  const saveVisitsCache = (id: string, rows: Visit[]) => localStorage.setItem(visitCacheKey(id), JSON.stringify(rows))\n  const saveTopicsCache = (id: string, rows: VisitTopic[]) => localStorage.setItem(topicCacheKey(id), JSON.stringify(rows))\n\n  function queueVisitChange(table: 'visits' | 'visit_topics', record: Visit | VisitTopic) {\n    if (!userId) return\n    const queue = readJson<PendingVisitChange[]>(visitQueueKey(userId), [])\n    const next = [...queue.filter(item => !(item.table === table && item.id === record.id)), { table, id: record.id, record }]\n    localStorage.setItem(visitQueueKey(userId), JSON.stringify(next))\n    setPendingCount(readJson<PendingChange[]>(queueKey(userId), []).length + next.length)\n    setSyncVersion(v => v + 1)\n  }\n\n  function queueChange(task: Task, deleted_at: string | null = null) {
+  const saveVisitsCache = (id: string, rows: Visit[]) => localStorage.setItem(visitCacheKey(id), JSON.stringify(rows))
+  const saveTopicsCache = (id: string, rows: VisitTopic[]) => localStorage.setItem(topicCacheKey(id), JSON.stringify(rows))
+
+  function queueVisitChange(table: 'visits' | 'visit_topics', record: Visit | VisitTopic) {
+    if (!userId) return
+    const queue = readJson<PendingVisitChange[]>(visitQueueKey(userId), [])
+    const next = [...queue.filter(item => !(item.table === table && item.id === record.id)), { table, id: record.id, record }]
+    localStorage.setItem(visitQueueKey(userId), JSON.stringify(next))
+    setPendingCount(readJson<PendingChange[]>(queueKey(userId), []).length + next.length)
+    setSyncVersion(v => v + 1)
+  }
+
+  function queueChange(task: Task, deleted_at: string | null = null) {
     if (!userId) return
     const queue = readJson<PendingChange[]>(queueKey(userId), [])
     const next = [...queue.filter(item => item.id !== task.id), { id: task.id, task, deleted_at }]
