@@ -4,7 +4,13 @@ import { hasSupabaseConfig, supabase } from './lib/supabase'
 
 type TaskStatus = 'A fazer' | 'Em andamento' | 'Concluído'
 type Priority = 'Baixa' | 'Média' | 'Alta' | 'Urgente'
-type Task = { id: string; title: string; description: string | null; category: string; due_date: string; due_time: string | null; status: TaskStatus; priority: Priority }
+type Task = { id: string; title: string; description: string | null; category: string; due_date: string; due_time: string | null; status: TaskStatus; priority: Priority; deleted_at?: string | null }
+type PendingChange = { id: string; task: Task; deleted_at: string | null }
+const cacheKey = (id: string) => 'wattwise:' + id + ':tasks'
+const queueKey = (id: string) => 'wattwise:' + id + ':queue'
+const readJson = <T,>(key: string, fallback: T): T => { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : fallback } catch { return fallback } }
+const savePending = (id: string, queue: PendingChange[]) => localStorage.setItem(queueKey(id), JSON.stringify(queue))
+const saveTaskCache = (id: string, tasks: Task[]) => localStorage.setItem(cacheKey(id), JSON.stringify(tasks))
 
 const categories = [
   ['Cemig', '#B9D3F2'], ['Ouvidorias', '#D9C7F0'], ['Auditorias', '#F6D6B8'],
@@ -19,6 +25,11 @@ export default function App() {
   const [section, setSection] = useState<'agenda' | 'visitas' | 'historico'>('agenda')
   const [sessionReady, setSessionReady] = useState(false)
   const [userEmail, setUserEmail] = useState('')
+  const [userId, setUserId] = useState('')
+  const [isOnline, setIsOnline] = useState(navigator.onLine)
+  const [syncing, setSyncing] = useState(false)
+  const [pendingCount, setPendingCount] = useState(0)
+  const [syncVersion, setSyncVersion] = useState(0)
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -41,29 +52,75 @@ export default function App() {
     if (!supabase) { setSessionReady(true); return }
     supabase.auth.getSession().then(({ data, error }) => {
       if (error) setError(error.message)
-      setUserEmail(data.session?.user.email ?? '')
+      const sessionUser = data.session?.user
+      if (sessionUser) { setUserEmail(sessionUser.email ?? ''); setUserId(sessionUser.id); localStorage.setItem('wattwise:offline-user', JSON.stringify({ id: sessionUser.id, email: sessionUser.email ?? '' })) }
+      else if (!navigator.onLine) { const cached = readJson<{id:string;email:string}|null>('wattwise:offline-user', null); if (cached) { setUserEmail(cached.email); setUserId(cached.id) } }
       setSessionReady(true)
     })
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUserEmail(session?.user.email ?? '')
+      setUserId(session?.user.id ?? '')
+      if (session?.user) localStorage.setItem('wattwise:offline-user', JSON.stringify({ id: session.user.id, email: session.user.email ?? '' }))
       setTasks([])
     })
     return () => listener.subscription.unsubscribe()
   }, [])
 
   useEffect(() => {
-    if (!supabase || !userEmail) return
-    let active = true
-    setLoadingTasks(true)
-    supabase.from('tasks').select('id,title,description,category,due_date,due_time,status,priority')
-      .is('deleted_at', null).order('due_date', { ascending: true }).then(({ data, error }) => {
-        if (!active) return
-        if (error) setError('Não foi possível carregar suas atividades: ' + error.message)
-        else setTasks((data ?? []) as Task[])
-        setLoadingTasks(false)
-      })
-    return () => { active = false }
-  }, [userEmail])
+    const update = () => setIsOnline(navigator.onLine)
+    window.addEventListener('online', update); window.addEventListener('offline', update)
+    return () => { window.removeEventListener('online', update); window.removeEventListener('offline', update) }
+  }, [])
+
+  useEffect(() => {
+    if (!userId) return
+    const cached = readJson<Task[]>(cacheKey(userId), [])
+    setTasks(cached.filter(t => !t.deleted_at))
+    setPendingCount(readJson<PendingChange[]>(queueKey(userId), []).length)
+    if (!isOnline || !supabase) return
+    let cancelled = false
+    const sync = async () => {
+      setSyncing(true)
+      try {
+        let queue = readJson<PendingChange[]>(queueKey(userId), [])
+        for (const change of queue) {
+          const row = { ...change.task, user_id: userId, deleted_at: change.deleted_at }
+          const result = await supabase!.from('tasks').upsert(row, { onConflict: 'id' })
+          if (result.error) throw result.error
+          queue = queue.filter(item => item.id !== change.id)
+          savePending(userId, queue)
+          if (!cancelled) setPendingCount(queue.length)
+        }
+        const result = await supabase.from('tasks').select('id,title,description,category,due_date,due_time,status,priority,deleted_at').order('due_date', { ascending: true })
+        if (result.error) throw result.error
+        if (!cancelled) {
+          const merged = ((result.data ?? []) as Task[]).filter(t => !t.deleted_at)
+          const pending = readJson<PendingChange[]>(queueKey(userId), [])
+          for (const change of pending) {
+            const index = merged.findIndex(t => t.id === change.id)
+            if (change.deleted_at) { if (index >= 0) merged.splice(index, 1) }
+            else if (index >= 0) merged[index] = change.task
+            else merged.push(change.task)
+          }
+          merged.sort((x,y) => x.due_date.localeCompare(y.due_date))
+          setTasks(merged); saveTaskCache(userId, merged); setError('')
+        }
+      } catch (e) {
+        if (!cancelled) setError('Sincronização pendente. Seus dados continuam salvos neste dispositivo. ' + (e instanceof Error ? e.message : ''))
+      } finally { if (!cancelled) setSyncing(false) }
+    }
+    void sync()
+    return () => { cancelled = true }
+  }, [userId, isOnline, syncVersion])
+
+  useEffect(() => { if (userId) saveTaskCache(userId, tasks) }, [userId, tasks])
+
+  function queueChange(task: Task, deleted_at: string | null = null) {
+    if (!userId) return
+    const queue = readJson<PendingChange[]>(queueKey(userId), [])
+    const next = [...queue.filter(item => item.id !== task.id), { id: task.id, task, deleted_at }]
+    savePending(userId, next); setPendingCount(next.length); setSyncVersion(v => v + 1)
+  }
 
   async function handleAuth(event: FormEvent) {
     event.preventDefault()
@@ -85,32 +142,31 @@ export default function App() {
 
   async function addTask(event: FormEvent) {
     event.preventDefault()
-    if (!supabase || !title.trim()) return
+    if (!userId || !title.trim()) return
     setError(''); setNotice('')
-    const { data: auth } = await supabase.auth.getUser()
-    if (!auth.user) { setError('Sua sessão expirou. Entre novamente.'); return }
-    const payload = { user_id: auth.user.id, title: title.trim(), description: description.trim() || null, category, due_date: date, due_time: time || null, priority, status: 'A fazer' as TaskStatus }
-    const { data, error } = await supabase.from('tasks').insert(payload).select('id,title,description,category,due_date,due_time,status,priority').single()
-    if (error) { setError('Não foi possível salvar a atividade: ' + error.message); return }
-    setTasks(current => [...current, data as Task].sort((a,b) => a.due_date.localeCompare(b.due_date)))
+    const task: Task = { id: crypto.randomUUID(), title: title.trim(), description: description.trim() || null, category, due_date: date, due_time: time || null, priority, status: 'A fazer', deleted_at: null }
+    setTasks(current => [...current, task].sort((a,b) => a.due_date.localeCompare(b.due_date)))
+    queueChange(task)
     setTitle(''); setDescription(''); setTime(''); setPriority('Média'); setDate(today())
-    setNotice('Atividade salva com sucesso.')
+    setNotice(isOnline ? 'Atividade salva neste dispositivo e enviada para sincronização.' : 'Atividade salva neste dispositivo. Será sincronizada quando a internet voltar.')
   }
 
   async function changeStatus(id: string, status: TaskStatus) {
-    if (!supabase) return
-    const previous = tasks
-    setTasks(current => current.map(task => task.id === id ? { ...task, status } : task))
-    const { error } = await supabase.from('tasks').update({ status }).eq('id', id)
-    if (error) { setTasks(previous); setError('Não foi possível atualizar o status: ' + error.message) }
-    else setNotice('Status atualizado. A alteração foi registrada no histórico.')
+    const task = tasks.find(t => t.id === id)
+    if (!task) return
+    const updated = { ...task, status }
+    setTasks(current => current.map(t => t.id === id ? updated : t))
+    queueChange(updated)
+    setNotice(isOnline ? 'Status atualizado. Sincronização iniciada.' : 'Status atualizado neste dispositivo e aguardando sincronização.')
   }
 
   async function deleteTask(id: string) {
-    if (!supabase || !window.confirm('Deseja arquivar esta atividade? Ela deixará de aparecer na agenda.')) return
-    const { error } = await supabase.from('tasks').update({ deleted_at: new Date().toISOString() }).eq('id', id)
-    if (error) setError('Não foi possível arquivar: ' + error.message)
-    else { setTasks(current => current.filter(task => task.id !== id)); setNotice('Atividade arquivada.') }
+    if (!window.confirm('Deseja arquivar esta atividade? Ela deixará de aparecer na agenda.')) return
+    const task = tasks.find(t => t.id === id)
+    if (!task) return
+    queueChange(task, new Date().toISOString())
+    setTasks(current => current.filter(t => t.id !== id))
+    setNotice(isOnline ? 'Atividade arquivada. Sincronização iniciada.' : 'Atividade arquivada neste dispositivo e aguardando sincronização.')
   }
 
   async function signOut() { if (supabase) await supabase.auth.signOut(); setTasks([]); setNotice('Você saiu da sua conta.') }
@@ -124,7 +180,7 @@ export default function App() {
 
   if (!sessionReady) return <div className="auth-screen"><div className="auth-card"><LoaderCircle className="spin"/><p>Conectando ao Watt-Wise...</p></div></div>
   if (!hasSupabaseConfig || !supabase) return <div className="auth-screen"><div className="auth-card"><div className="brand-mark auth-mark">W</div><h1>Watt-Wise</h1><p>Falta configurar a conexão com o Supabase para liberar o acesso.</p><div className="setup-note"><ShieldCheck size={18}/><span>O endereço do projeto e a chave pública precisam estar nas variáveis de ambiente da hospedagem.</span></div></div></div>
-  if (!userEmail) return <div className="auth-screen"><form className="auth-card" onSubmit={handleAuth}><div className="brand-mark auth-mark">W</div><div className="eyebrow">ORGANIZAÇÃO & ACOMPANHAMENTO</div><h1>Watt-Wise</h1><p>{authMode === 'login' ? 'Entre para acessar sua agenda.' : 'Crie sua conta para começar a usar sua agenda.'}</p>
+  if (!userEmail) return <div className="auth-screen"><form className="auth-card" onSubmit={handleAuth}><div className="brand-mark auth-mark">W</div><div className="eyebrow">ORGANIZAÇÃO & ACOMPANHAMENTO</div><h1>Watt-Wise</h1><p>{authMode === 'login' ? 'Entre para acessar sua agenda.' : 'Crie sua conta para começar a usar sua agenda.'}</p>{!isOnline && <div className="notice">Você está sem internet. Para entrar off-line, é necessário já ter acessado esta conta neste dispositivo.</div>}
     {error && <div className="error-message">{error}</div>}{notice && <div className="notice">{notice}</div>}
     <label>E-mail<input type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com"/></label>
     <label>Senha<input type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} minLength={6} required value={password} onChange={e => setPassword(e.target.value)} placeholder="Mínimo de 6 caracteres"/></label>
@@ -142,7 +198,7 @@ export default function App() {
     </aside>
     {mobileOpen && <button className="scrim" onClick={() => setMobileOpen(false)} aria-label="Fechar menu"/>}
     <main className="main">
-      <header className="topbar"><button className="menu-button" onClick={() => setMobileOpen(true)}><Menu/></button><div className="breadcrumb">Watt-Wise <span>/</span> {nav.find(n => n.id === section)?.label}</div><button className="profile" onClick={signOut} title="Sair da conta"><LogOut size={14}/> Sair <ChevronDown size={14}/></button></header>
+      <header className="topbar"><button className="menu-button" onClick={() => setMobileOpen(true)}><Menu/></button><div className="breadcrumb">Watt-Wise <span>/</span> {nav.find(n => n.id === section)?.label}</div><div className={'sync-indicator ' + (!isOnline ? 'offline' : syncing ? 'syncing' : pendingCount ? 'pending' : 'online')}><span className="sync-dot"/>{!isOnline ? 'Off-line' : syncing ? 'Sincronizando...' : pendingCount ? pendingCount + ' pendente(s)' : 'Sincronizado'}</div><button className="profile" onClick={signOut} title="Sair da conta"><LogOut size={14}/> Sair <ChevronDown size={14}/></button></header>
       <div className="content">
         <div className="welcome"><div><div className="eyebrow">PAINEL DE CONTROLE</div><h1>{section === 'agenda' ? 'Minha Agenda' : section === 'visitas' ? 'Visitas à Cemig' : 'Histórico'}</h1><p>{section === 'agenda' ? 'Organize suas atividades e acompanhe suas prioridades.' : section === 'visitas' ? 'Registre atas, encaminhamentos e pendências das visitas.' : 'Acompanhe as movimentações registradas no sistema.'}</p></div><div className="date-chip"><CalendarDays size={16}/>{new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}</div></div>
         {error && <div className="error-message">{error}<button onClick={() => setError('')}>Fechar</button></div>}
