@@ -94,7 +94,7 @@ export default function App() {
           if (result.error) throw result.error
           queue = queue.filter(item => item.id !== change.id)
           savePending(userId, queue)
-          if (!cancelled) setPendingCount(queue.length)
+          if (!cancelled) setPendingCount(queue.length + readJson<PendingVisitChange[]>(visitQueueKey(userId), []).length)
         }
         let visitChanges = readJson<PendingVisitChange[]>(visitQueueKey(userId), [])\n        for (const change of [...visitChanges].sort((a,b) => (a.table === 'visits' ? 0 : 1) - (b.table === 'visits' ? 0 : 1))) {\n          const result = await supabase!.from(change.table).upsert(change.record, { onConflict: 'id' })\n          if (result.error) throw result.error\n          visitChanges = visitChanges.filter(item => !(item.table === change.table && item.id === change.id))\n          localStorage.setItem(visitQueueKey(userId), JSON.stringify(visitChanges))\n        }\n        const result = await supabase!.from('tasks').select('id,title,description,category,due_date,due_time,status,priority,deleted_at').order('due_date', { ascending: true })
         if (result.error) throw result.error
@@ -108,7 +108,7 @@ export default function App() {
             else merged.push(change.task)
           }
           merged.sort((x,y) => x.due_date.localeCompare(y.due_date))
-          setTasks(merged); saveTaskCache(userId, merged)\n          const [visitResult, topicResult] = await Promise.all([supabase!.from('visits').select('*').order('visit_date', { ascending: false }), supabase!.from('visit_topics').select('*').order('created_at', { ascending: true })])\n          if (visitResult.error) throw visitResult.error\n          if (topicResult.error) throw topicResult.error\n          setVisits((visitResult.data ?? []) as Visit[]); saveVisitsCache(userId, (visitResult.data ?? []) as Visit[])\n          setVisitTopics((topicResult.data ?? []) as VisitTopic[]); saveTopicsCache(userId, (topicResult.data ?? []) as VisitTopic[])\n          setError('')
+          setTasks(merged); saveTaskCache(userId, merged)\n          const [visitResult, topicResult] = await Promise.all([supabase!.from('visits').select('*').order('visit_date', { ascending: false }), supabase!.from('visit_topics').select('*').order('created_at', { ascending: true })])\n          if (visitResult.error) throw visitResult.error\n          if (topicResult.error) throw topicResult.error\n          setVisits((visitResult.data ?? []) as Visit[]); saveVisitsCache(userId, (visitResult.data ?? []) as Visit[])\n          setVisitTopics((topicResult.data ?? []) as VisitTopic[]); saveTopicsCache(userId, (topicResult.data ?? []) as VisitTopic[])\n          setPendingCount(readJson<PendingChange[]>(queueKey(userId), []).length + readJson<PendingVisitChange[]>(visitQueueKey(userId), []).length)\n          setError('')
         }
       } catch (e) {
         if (!cancelled) setError('Sincronização pendente. Seus dados continuam salvos neste dispositivo. ' + (e instanceof Error ? e.message : ''))
