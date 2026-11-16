@@ -47,6 +47,7 @@ export default function App() {
   const [visitTopics, setVisitTopics] = useState<VisitTopic[]>([])
   const [historyEvents, setHistoryEvents] = useState<Array<{id:string; created_at:string; event_type:string; old_value:any; new_value:any; entity_type:'Atividade'|'Assunto'}>>([])
   const [selectedVisitId, setSelectedVisitId] = useState('')
+  const [editingVisit, setEditingVisit] = useState<Visit | null>(null)
   const [visitDate, setVisitDate] = useState(today())
   const [visitTitle, setVisitTitle] = useState('Visita à Cemig')
   const [participants, setParticipants] = useState('')
@@ -264,6 +265,16 @@ export default function App() {
     setVisits(next); saveVisitsCache(userId, next); setSelectedVisitId(visit.id); queueVisitChange('visits', visit)
     setVisitTitle('Visita à Cemig'); setParticipants(''); setVisitNotes('')
     setNotice(isOnline ? 'Visita registrada e enviada para sincronização.' : 'Visita salva neste dispositivo. Será sincronizada quando a internet voltar.')
+  }
+
+  function saveEditedVisit(event: FormEvent) {
+    event.preventDefault()
+    if (!userId || !editingVisit || !editingVisit.title.trim()) return
+    const updated: Visit = { ...editingVisit, title: editingVisit.title.trim(), participants: editingVisit.participants?.trim() || null, notes: editingVisit.notes?.trim() || null }
+    const next = visits.map(item => item.id === updated.id ? updated : item).sort((a,b) => b.visit_date.localeCompare(a.visit_date))
+    setVisits(next); saveVisitsCache(userId, next); queueVisitChange('visits', updated)
+    setEditingVisit(null)
+    setNotice(isOnline ? 'Visita editada e enviada para sincronização.' : 'Visita editada neste dispositivo. Será sincronizada quando a internet voltar.')
   }
 
   function addVisitTopic(event: FormEvent) {
@@ -491,7 +502,14 @@ export default function App() {
             {visits.length === 0 ? <div className="empty"><ClipboardList size={28}/><strong>Nenhuma visita cadastrada</strong><span>Cadastre a primeira visita acima. Você também poderá fazer isso off-line.</span></div> : <div className="visit-list">{visits.map(visit => <button key={visit.id} className={'visit-card ' + (selectedVisitId === visit.id ? 'selected' : '')} onClick={() => setSelectedVisitId(visit.id)}><span><strong>{visit.title}</strong><small>{new Date(visit.visit_date + 'T12:00:00').toLocaleDateString('pt-BR')} · {visitTopics.filter(t => t.visit_id === visit.id).length} assunto(s)</small></span><ChevronDown size={16}/></button>)}</div>}
           </section>
           {selectedVisitId && visits.some(v => v.id === selectedVisitId) && <section className="panel">
-            <div className="panel-heading"><div><h2>Assuntos da ata</h2><p>{visits.find(v => v.id === selectedVisitId)?.title} · {new Date((visits.find(v => v.id === selectedVisitId)?.visit_date ?? today()) + 'T12:00:00').toLocaleDateString('pt-BR')}</p></div><div className="heading-actions"><span className="soft-tag">{visitTopics.filter(t => t.visit_id === selectedVisitId).length} ASSUNTO(S)</span><button type="button" className="secondary-button export-button" onClick={exportVisitPdf}><FileDown size={14}/> PDF</button><button type="button" className="secondary-button export-button" onClick={exportVisitExcel}><FileDown size={14}/> Excel</button></div></div>
+            <div className="panel-heading"><div><h2>Assuntos da ata</h2><p>{visits.find(v => v.id === selectedVisitId)?.title} · {new Date((visits.find(v => v.id === selectedVisitId)?.visit_date ?? today()) + 'T12:00:00').toLocaleDateString('pt-BR')}</p></div><div className="heading-actions"><button type="button" className="secondary-button" onClick={() => setEditingVisit({ ...visits.find(v => v.id === selectedVisitId)! })}><Pencil size={14}/> Editar visita</button><span className="soft-tag">{visitTopics.filter(t => t.visit_id === selectedVisitId).length} ASSUNTO(S)</span><button type="button" className="secondary-button export-button" onClick={exportVisitPdf}><FileDown size={14}/> PDF</button><button type="button" className="secondary-button export-button" onClick={exportVisitExcel}><FileDown size={14}/> Excel</button></div></div>
+            {editingVisit?.id === selectedVisitId && <form className="form-grid edit-task-form visit-edit-form" onSubmit={saveEditedVisit}>
+              <label>Data da visita<input type="date" required value={editingVisit.visit_date} onChange={e => setEditingVisit({ ...editingVisit, visit_date: e.target.value })}/></label>
+              <label className="wide">Título da ata<input required value={editingVisit.title} onChange={e => setEditingVisit({ ...editingVisit, title: e.target.value })}/></label>
+              <label className="wide">Participantes<input value={editingVisit.participants ?? ''} onChange={e => setEditingVisit({ ...editingVisit, participants: e.target.value })}/></label>
+              <label className="wide notes-field">Observações gerais<textarea rows={7} value={editingVisit.notes ?? ''} onChange={e => setEditingVisit({ ...editingVisit, notes: e.target.value })}/></label>
+              <div className="wide edit-actions"><button className="primary-button" type="submit">Salvar alterações</button><button className="secondary-button" type="button" onClick={() => setEditingVisit(null)}>Cancelar</button></div>
+            </form>}
             <form className="form-grid" onSubmit={addVisitTopic}>
               <label>Categoria<select value={topicCategory} onChange={e => setTopicCategory(e.target.value)}><option>Troca de titularidade</option><option>Transferência saldo de geração</option><option>Fatura Cemig</option><option>Primeira Ligação</option><option>CPF divergente na Cemig</option></select></label>\n              <label className="wide">Assunto<input required value={topicTitle} onChange={e => setTopicTitle(e.target.value)} placeholder="Ex.: Retorno sobre solicitação"/></label>
               <label className="wide">Descrição<input value={topicDescription} onChange={e => setTopicDescription(e.target.value)} placeholder="Detalhes do assunto"/></label>
