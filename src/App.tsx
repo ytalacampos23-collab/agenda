@@ -72,7 +72,7 @@ const categories = [
 const today = () => { const d = new Date(); return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-') }
 
 export default function App() {
-  const [section, setSection] = useState<'agenda' | 'reunioes' | 'visitas' | 'ouvidoria' | 'historico'>('agenda')
+  const [section, setSection] = useState<'agenda' | 'visitas' | 'ouvidoria' | 'historico'>('agenda')
   const [visitPageTab, setVisitPageTab] = useState<'visits' | 'library'>('visits')
   const [sessionReady, setSessionReady] = useState(false)
   const [authVerified, setAuthVerified] = useState(false)
@@ -811,7 +811,6 @@ export default function App() {
 
   const nav = [
     { id: 'agenda' as const, label: 'Minha Agenda', icon: CalendarDays },
-    { id: 'reunioes' as const, label: 'Reuniões', icon: CalendarClock },
     { id: 'visitas' as const, label: 'Visita à Cemig', icon: ClipboardList },
     { id: 'ouvidoria' as const, label: 'Auditoria', icon: ClipboardList },
     { id: 'historico' as const, label: 'Histórico', icon: History },
@@ -840,7 +839,7 @@ export default function App() {
     <main className="main">
       <header className="topbar"><button className="menu-button" onClick={() => setMobileOpen(true)}><Menu/></button><div className="breadcrumb">Watt-Wise <span>/</span> {nav.find(n => n.id === section)?.label}</div><div className={'sync-indicator ' + (!isOnline ? 'offline' : syncing ? 'syncing' : syncFailed ? 'pending' : pendingCount ? 'pending' : 'online')}><span className="sync-dot"/>{!isOnline ? 'Off-line' : syncing ? 'Sincronizando...' : syncFailed ? 'Falha na sincronização' : pendingCount ? pendingCount + ' pendente(s)' : 'Sincronizado'}</div><button className="profile" onClick={signOut} title="Sair da conta"><LogOut size={14}/> Sair <ChevronDown size={14}/></button></header>
       <div className="content">
-        <div className="welcome"><div><div className="eyebrow">PAINEL DE CONTROLE</div><h1>{section === 'agenda' ? 'Minha Agenda' : section === 'reunioes' ? 'Reuniões' : section === 'visitas' ? 'Visita à Cemig' : section === 'ouvidoria' ? 'Auditoria' : 'Histórico'}</h1><p>{section === 'agenda' ? 'Organize suas atividades e acompanhe suas prioridades.' : section === 'reunioes' ? 'Organize reuniões e agendamentos por data, horário e prioridade.' : section === 'visitas' ? 'Registre atas, encaminhamentos e pendências das visitas.' : section === 'ouvidoria' ? 'Área reservada para desenvolvimento dos registros e acompanhamentos da Auditoria.' : 'Acompanhe as movimentações registradas no sistema.'}</p></div><label className="date-chip"><CalendarDays size={16}/><span>Data</span><input aria-label="Selecionar data" type="date" value={selectedDashboardDate} onChange={e => setSelectedDashboardDate(e.target.value)}/></label></div>
+        <div className="welcome"><div><div className="eyebrow">PAINEL DE CONTROLE</div><h1>{section === 'agenda' ? 'Minha Agenda' : section === 'visitas' ? 'Visita à Cemig' : section === 'ouvidoria' ? 'Auditoria' : 'Histórico'}</h1><p>{section === 'agenda' ? 'Organize suas atividades, reuniões e agendamentos.' : section === 'visitas' ? 'Registre atas, encaminhamentos e pendências das visitas.' : section === 'ouvidoria' ? 'Área reservada para desenvolvimento dos registros e acompanhamentos da Auditoria.' : 'Acompanhe as movimentações registradas no sistema.'}</p></div><label className="date-chip"><CalendarDays size={16}/><span>Data</span><input aria-label="Selecionar data" type="date" value={selectedDashboardDate} onChange={e => setSelectedDashboardDate(e.target.value)}/></label></div>
 
         {error && <div className="error-message">{error}<button onClick={() => setError('')}>Fechar</button></div>}
         {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')}>Fechar</button></div>}
@@ -877,8 +876,6 @@ export default function App() {
             <div className="calendar-toolbar"><div className="calendar-modes"><button type="button" className={calendarView === 'month' ? 'active' : ''} onClick={() => setCalendarView('month')}>Mês</button><button type="button" className={calendarView === 'week' ? 'active' : ''} onClick={() => setCalendarView('week')}>Semana</button><button type="button" className={calendarView === 'day' ? 'active' : ''} onClick={() => setCalendarView('day')}>Dia</button></div><div className="calendar-navigation"><button type="button" onClick={() => moveCalendar(-1)} aria-label="Período anterior"><ChevronLeft size={16}/></button><strong>{calendarHeading}</strong><button type="button" onClick={() => moveCalendar(1)} aria-label="Próximo período"><ChevronRight size={16}/></button><button type="button" onClick={() => setCalendarDate(today())}>Hoje</button></div></div>
             <div className={'calendar-grid ' + calendarView}>{calendarView !== 'day' && ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(day => <div className="calendar-weekday" key={day}>{day}</div>)}{calendarDays.map(day => <div key={day} className={'calendar-cell ' + (day.slice(0,7) !== calendarDate.slice(0,7) && calendarView === 'month' ? 'outside-month' : '') + (day === today() ? ' is-today' : '')}><button type="button" className="calendar-day" onClick={() => {setCalendarDate(day);setCalendarView('day')}}>{new Date(day + 'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit', ...(calendarView === 'day' ? {month:'long'} : {})})}</button>{tasks.filter(task => task.due_date === day && task.show_on_calendar !== false).map(task => <button type="button" key={task.id} className={'calendar-event ' + (task.status === 'Concluído' ? 'done' : task.priority === 'Urgente' ? 'urgent' : '')} onClick={() => { clearTaskFilters(); setEditingTask({...task}) }} title={task.title}>{task.due_time ? task.due_time.slice(0,5) + ' · ' : ''}{task.title}</button>)}</div>)}</div></>}
           </section>
-        </>}
-        {section === 'reunioes' && <>
           <section className="panel meetings-panel">
             <button type="button" className="panel-heading collapsible-panel-heading" aria-expanded={meetingFormOpen} onClick={() => setMeetingFormOpen(open => !open)}>
               <div><h2>{editingMeetingId ? 'Editar reunião / agendamento' : 'Cadastrar reunião / agendamento'}</h2><p>Registre data, horário, prioridade e observações importantes.</p></div>
@@ -902,6 +899,8 @@ export default function App() {
               <div className="meeting-card-footer"><span className={'meeting-status meeting-status-' + meeting.status.toLowerCase().replace(/ /g,'-')}>{meeting.status}</span><select aria-label={'Status de ' + meeting.title} value={meeting.status} onChange={e => changeStatus(meeting.id,e.target.value as TaskStatus)}><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select></div>
             </article>)}</div>}
           </section>
+        </>}
+
         </>}
         {section === 'visitas' && <>
           <div className="visit-page-tabs" role="tablist" aria-label="Seções da Visita à Cemig">
