@@ -137,3 +137,49 @@
 .collapse-heading-action svg{transition:transform .18s ease}
 .collapse-heading-action svg.chevron-open{transform:rotate(180deg)}
 .collapsible-panel-heading:focus-visible{outline:2px solid var(--primary,#2563eb);outline-offset:3px;border-radius:8px}
+
+
+/* Auditoria de faturas */
+.audit-tabs{display:flex;gap:8px;margin:0 0 15px;border-bottom:1px solid #e5ece8}
+.audit-tab{display:flex;align-items:center;gap:8px;padding:11px 15px;border:0;border-bottom:2px solid transparent;background:transparent;color:#728780;font-size:12px;font-weight:650}
+.audit-tab.active{color:#1c5555;border-bottom-color:#1c5555}
+.audit-panel .panel-heading{align-items:flex-start;gap:12px}
+.audit-security-note{display:flex;gap:12px;align-items:flex-start;padding:13px 15px;margin:0 0 18px;border:1px solid #dcebe1;border-radius:9px;background:#f2f8f3;color:#477064}
+.audit-security-note svg{flex-shrink:0;margin-top:1px}
+.audit-security-note span,.audit-security-note strong{display:block}
+.audit-security-note span{font-size:11px;line-height:1.55}
+.audit-security-note strong{font-size:12px;margin-bottom:2px;color:#315b4d}
+.audit-upload{min-height:145px;border:1.5px dashed #b8cec2;border-radius:11px;background:#fbfdfb;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#52766a;cursor:pointer;transition:.15s}
+.audit-upload:hover{border-color:#5b9279;background:#f5faf6}
+.audit-upload strong{font-size:13px;color:#315b4d}
+.audit-upload span{font-size:10px;color:#8a9b94}
+.audit-upload input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.audit-progress{display:flex;align-items:center;gap:9px;margin-top:14px;color:#6d8179;font-size:11px}
+.audit-progress .spin{display:inline-flex;animation:spin 1.2s linear infinite}
+.audit-result-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:24px 0 13px}
+.audit-result-heading>div:first-child{display:flex;flex-direction:column;gap:4px}
+.audit-result-heading strong{font-size:14px;color:#2c4943}
+.audit-result-heading small{font-size:10px;color:#899991}
+.audit-actions{display:flex;gap:8px;align-items:center}
+.audit-actions .primary-button{white-space:nowrap}
+.audit-months{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-bottom:13px;color:#7b8e86;font-size:10px}
+.audit-months b{padding:5px 8px;border-radius:5px;background:#edf5f0;color:#4d7162;font-size:10px;font-weight:650;text-transform:capitalize}
+.audit-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:18px}
+.audit-summary>div{padding:15px;border:1px solid #e6ede9;border-radius:9px;background:#fff;display:flex;flex-direction:column;gap:7px}
+.audit-summary span{font-size:10px;color:#758780}
+.audit-summary strong{font:800 25px Manrope;color:#294b43}
+.audit-summary small{display:flex;align-items:center;gap:6px;font-size:10px;color:#83948d}
+.audit-dot{width:8px;height:8px;border-radius:50%;background:#cbd7d0;display:inline-block}
+.audit-dot.orange{background:#e7a33f}
+.audit-list-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px}
+.audit-list-heading strong{font-size:12px;color:#36554b}
+.audit-list-heading span{font-size:10px;color:#82948b}
+.audit-table-wrap{overflow:auto;border:1px solid #e7eeea;border-radius:8px}
+.audit-table{width:100%;border-collapse:collapse;font-size:11px}
+.audit-table th,.audit-table td{padding:10px 12px;text-align:left;border-bottom:1px solid #edf1ef}
+.audit-table th{background:#f6f9f7;color:#647b70;font-size:10px}
+.audit-table td{color:#40584e}
+.audit-table tr:last-child td{border-bottom:0}
+.audit-empty{padding:18px;border:1px solid #e7eeea;border-radius:8px;color:#84958e;font-size:11px;text-align:center}
+.audit-footnote{margin:13px 0 0;color:#87968f;font-size:10px;line-height:1.55}
+@media(max-width:650px){.audit-panel .panel-heading,.audit-result-heading{flex-direction:column;align-items:stretch}.audit-actions{flex-wrap:wrap}.audit-actions button{flex:1;justify-content:center}.audit-summary{grid-template-columns:1fr}.audit-upload{min-height:125px}}
