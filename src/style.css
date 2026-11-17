@@ -256,3 +256,12 @@
 .library-empty span{max-width:390px;color:#829188;font-size:11px;line-height:1.6}
 .library-empty button{margin-top:5px}
 @media(max-width:700px){.library-items{grid-template-columns:1fr}.library-hero{align-items:flex-start}.library-total{padding:7px 10px}.library-toolbar{align-items:stretch;flex-direction:column}.library-new-button{justify-content:center}.library-tabs button{flex:1;justify-content:center;padding:11px 6px;font-size:10px}.library-tabs button svg{display:none}.library-list-heading{align-items:flex-start;flex-direction:column}}
+
+
+/* Mensagens da biblioteca em formato compacto e expansível */
+.library-message-toggle{display:flex;flex-direction:column;align-items:flex-start;gap:5px;padding:0;border:0;background:transparent;text-align:left;color:#31554a;font:inherit;font-size:13px;font-weight:750;line-height:1.4;cursor:pointer;overflow-wrap:anywhere}
+.library-message-toggle>span{color:#71877c;font-size:10px;font-weight:650}
+.library-message-toggle:hover{color:#1c6555}
+.library-item:has(.library-message-toggle){padding-top:13px;padding-bottom:13px}
+.library-item:has(.library-message-toggle) .library-item-heading{align-items:center}
+.library-item:has(.library-message-toggle) .library-item-title{gap:0}
