@@ -43,6 +43,7 @@ export default function App() {
   const [password, setPassword] = useState('')
   const [authBusy, setAuthBusy] = useState(false)
   const [tasks, setTasks] = useState<Task[]>([])
+  const [showAddTaskForm, setShowAddTaskForm] = useState(false)
   const [visits, setVisits] = useState<Visit[]>([])
   const [visitTopics, setVisitTopics] = useState<VisitTopic[]>([])
   const [historyEvents, setHistoryEvents] = useState<Array<{id:string; created_at:string; event_type:string; old_value:any; new_value:any; entity_type:'Atividade'|'Assunto'}>>([])
@@ -557,8 +558,8 @@ export default function App() {
             <div className="stat-card overdue-stat"><span>Atrasadas</span><strong>{overdueTasks.length}</strong><AlertCircle/></div>
           </div>
           <section className="panel">
-            <div className="panel-heading"><div><h2>Adicionar atividade</h2><p>Cadastre uma nova obrigação ou lembrete.</p></div><span className="soft-tag">NOVA TAREFA</span></div>
-            <form className="form-grid" onSubmit={addTask}>
+            <button type="button" className="panel-heading collapsible-panel-heading" aria-expanded={showAddTaskForm} onClick={() => setShowAddTaskForm(value => !value)}><div><h2>Adicionar atividade</h2><p>Cadastre uma nova obrigação ou lembrete.</p></div><span className="collapse-heading-action">{showAddTaskForm ? 'Recolher' : 'Adicionar'} <ChevronDown className={showAddTaskForm ? 'chevron-open' : ''} size={18}/></span></button>
+            {showAddTaskForm && <form className="form-grid" onSubmit={addTask}>
               <label className="wide">Título da atividade<input required value={title} onChange={e => setTitle(e.target.value)} placeholder="Ex.: Retornar solicitação do cliente"/></label>
               <label className="wide">Descrição (opcional)<input value={description} onChange={e => setDescription(e.target.value)} placeholder="Detalhes ou orientações"/></label>
               <label>Categoria<select value={category} onChange={e => setCategory(e.target.value)}>{categories.map(c => <option key={c[0]}>{c[0]}</option>)}</select></label>
@@ -568,7 +569,7 @@ export default function App() {
               <label>Responsável pela execução<input value={assignedTo} onChange={e => setAssignedTo(e.target.value)} placeholder="Nome do estagiário ou responsável"/></label>
               <label className="calendar-choice"><input type="checkbox" checked={showOnCalendar} onChange={e => setShowOnCalendar(e.target.checked)}/> Exibir esta tarefa no calendário</label>
               <div className="wide form-action"><button className="primary-button" disabled={!title.trim()}><Plus size={17}/>Salvar atividade</button></div>
-            </form>
+            </form>}
           </section>
           <section className="panel">
             <div className="panel-heading list-heading"><div><h2>Suas atividades</h2><p>As atividades ficam salvas na sua conta.</p></div><div className="list-filter-group"><label className="filter">Status<select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option>Todos</option><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select></label><label className="filter">Categoria<select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}><option>Todas</option>{categories.map(c => <option key={c[0]}>{c[0]}</option>)}</select></label><label className="filter">Prioridade<select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}><option>Todas</option><option>Baixa</option><option>Média</option><option>Alta</option><option>Urgente</option></select></label><label className="filter">Responsável<select value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)}><option>Todas</option>{assignees.map(name => <option key={name}>{name}</option>)}</select></label></div></div>
