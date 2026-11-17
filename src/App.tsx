@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarDays, ClipboardList, History, Plus, Search, FileDown, ShieldCheck, Menu, X, CheckCircle2, Clock3, AlertCircle, ChevronDown, ChevronLeft, ChevronRight, LogOut, LoaderCircle, Trash2, Pencil } from 'lucide-react'
+import { CalendarDays, ClipboardList, History, Plus, Search, FileDown, FileSpreadsheet, Upload, ShieldCheck, Menu, X, CheckCircle2, Clock3, AlertCircle, ChevronDown, ChevronLeft, ChevronRight, LogOut, LoaderCircle, Trash2, Pencil } from 'lucide-react'
+import ExcelJS from 'exceljs'
 import { hasSupabaseConfig, supabase } from './lib/supabase'
 
 type TaskStatus = 'A fazer' | 'Em andamento' | 'Concluído'
@@ -105,6 +106,10 @@ export default function App() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
+  const [auditBusy, setAuditBusy] = useState(false)
+  const [auditResult, setAuditResult] = useState<{ fileName: string; months: string[]; markedCount: number; missing: Array<{ installation: string; client: string }> } | null>(null)
+  const auditWorkbookRef = useRef<ExcelJS.Workbook | null>(null)
+  const auditFileNameRef = useRef('')
 
   useEffect(() => {
     if (!supabase) { setSessionReady(true); return }
@@ -378,6 +383,147 @@ export default function App() {
     setNotice(isOnline ? 'Assunto registrado e enviado para sincronização.' : 'Assunto salvo neste dispositivo. Será sincronizado quando a internet voltar.')
   }
 
+  const normalizeAuditText = (value: unknown) => String(value ?? '').trim().toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
+  const auditCellValue = (cell: ExcelJS.Cell): unknown => {
+    const value = cell.value
+    if (value && typeof value === 'object' && 'result' in value) return (value as { result?: unknown }).result ?? cell.text
+    return value ?? cell.text
+  }
+  const parseAuditMonth = (value: unknown): number | null => {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value.getFullYear() * 12 + value.getMonth()
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      if (value > 200000 && value < 300000) {
+        const year = Math.floor(value / 100), month = value % 100
+        if (month >= 1 && month <= 12) return year * 12 + month - 1
+      }
+      if (value > 1 && value < 100000) {
+        const date = new Date(Date.UTC(1899, 11, 30) + value * 86400000)
+        if (!Number.isNaN(date.getTime())) return date.getUTCFullYear() * 12 + date.getUTCMonth()
+      }
+    }
+    const raw = normalizeAuditText(value)
+    if (!raw) return null
+    const months: Record<string, number> = { janeiro:1, jan:1, fevereiro:2, fev:2, marco:3, mar:3, abril:4, abr:4, maio:5, mai:5, junho:6, jun:6, julho:7, jul:7, agosto:8, ago:8, setembro:9, set:9, outubro:10, out:10, novembro:11, nov:11, dezembro:12, dez:12 }
+    const yearMatch = raw.match(/(?:19|20)\\d{2}/)
+    const year = yearMatch ? Number(yearMatch[0]) : new Date().getFullYear()
+    const numeric = raw.match(/(?:^|\\D)(0?[1-9]|1[0-2])\\s*[\\/.-]\\s*((?:19|20)\\d{2})(?:\\D|$)/) || raw.match(/^((?:19|20)\\d{2})\\s*[\\/.-]\\s*(0?[1-9]|1[0-2])$/)
+    if (numeric) {
+      const month = numeric[0].startsWith(String(yearMatch?.[0] ?? '')) && numeric[0].startsWith('20') ? Number(numeric[2]) : Number(numeric[1])
+      const parsedYear = Number(yearMatch?.[0] ?? (numeric[2] && numeric[2].length === 4 ? numeric[2] : numeric[1]))
+      if (month >= 1 && month <= 12 && parsedYear >= 1900 && parsedYear <= 2200) return parsedYear * 12 + month - 1
+    }
+    const monthName = Object.keys(months).find(name => new RegExp('(?:^|\\\\b)' + name + '(?:\\\\b|$)').test(raw))
+    if (monthName) return year * 12 + months[monthName] - 1
+    const fullDate = raw.match(/(?:^|\\D)\\d{1,2}\\/(\\d{1,2})\\/((?:19|20)\\d{2})(?:\\D|$)/)
+    if (fullDate) {
+      const month = Number(fullDate[1]), parsedYear = Number(fullDate[2])
+      if (month >= 1 && month <= 12) return parsedYear * 12 + month - 1
+    }
+    return null
+  }
+  const auditMonthLabel = (monthIndex: number) => new Date(Math.floor(monthIndex / 12), monthIndex % 12, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+
+  async function auditInvoices(file?: File) {
+    if (!file) return
+    setError(''); setNotice(''); setAuditResult(null); auditWorkbookRef.current = null
+    if (!file.name.toLowerCase().endsWith('.xlsx')) { setError('Envie uma planilha no formato .xlsx. Arquivos .xls, .xlsm, CSV e outros formatos não são aceitos nesta primeira versão.'); return }
+    if (file.size === 0 || file.size > 10 * 1024 * 1024) { setError('O arquivo está vazio ou ultrapassa o limite de 10 MB.'); return }
+    setAuditBusy(true)
+    try {
+      const workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(await file.arrayBuffer())
+      let target: { worksheet: ExcelJS.Worksheet; headerRow: number; installationCol: number; referenceCol: number; clientCol: number } | null = null
+      for (const worksheet of workbook.worksheets) {
+        const scanLimit = Math.min(worksheet.rowCount, 20)
+        for (let rowNumber = 1; rowNumber <= scanLimit; rowNumber++) {
+          const row = worksheet.getRow(rowNumber)
+          let installationCol = 0, referenceCol = 0, clientCol = 0
+          row.eachCell({ includeEmpty: false }, cell => {
+            const heading = normalizeAuditText(auditCellValue(cell))
+            if (!installationCol && heading.includes('instal')) installationCol = cell.col
+            if (!referenceCol && (heading.includes('refer') || heading.includes('compet') || heading === 'mes' || heading.includes('mes ref'))) referenceCol = cell.col
+            if (!clientCol && (heading.includes('cliente') || heading === 'nome' || heading.includes('nome do cliente'))) clientCol = cell.col
+          })
+          if (installationCol && referenceCol) { target = { worksheet, headerRow: rowNumber, installationCol, referenceCol, clientCol }; break }
+        }
+        if (target) break
+      }
+      if (!target) throw new Error('Não encontrei os cabeçalhos de Instalação e Mês de referência. Confira se a planilha contém essas colunas na primeira parte da aba.')
+      const { worksheet, headerRow, installationCol, referenceCol, clientCol } = target
+      const records: Array<{ rowNumber: number; installation: string; client: string; month: number }> = []
+      const monthsFound = new Set<number>()
+      worksheet.eachRow((row, rowNumber) => {
+        if (rowNumber <= headerRow) return
+        const rawInstallation = auditCellValue(row.getCell(installationCol))
+        const installation = String(rawInstallation ?? '').replace(/\\.0$/, '').replace(/[^\\dA-Za-z]/g, '')
+        const month = parseAuditMonth(auditCellValue(row.getCell(referenceCol)) ?? row.getCell(referenceCol).text)
+        if (!installation || month === null) return
+        const rawClient = clientCol ? auditCellValue(row.getCell(clientCol)) : ''
+        const client = String(rawClient ?? '').trim()
+        records.push({ rowNumber, installation, client, month })
+        monthsFound.add(month)
+      })
+      const latestMonths = [...monthsFound].sort((a, b) => b - a).slice(0, 3)
+      if (latestMonths.length < 3) throw new Error('A planilha precisa conter pelo menos três meses de referência diferentes para realizar a comparação.')
+      const [latest, previousOne, previousTwo] = latestMonths
+      const byInstallation = new Map<string, Set<number>>()
+      const clientByInstallation = new Map<string, string>()
+      for (const record of records) {
+        if (!byInstallation.has(record.installation)) byInstallation.set(record.installation, new Set())
+        byInstallation.get(record.installation)!.add(record.month)
+        if (record.client && !clientByInstallation.has(record.installation)) clientByInstallation.set(record.installation, record.client)
+      }
+      const marked = new Set<string>()
+      const missing: Array<{ installation: string; client: string }> = []
+      for (const [installation, references] of byInstallation) {
+        if (latestMonths.every(month => references.has(month))) marked.add(installation)
+        else if (references.has(previousOne) && references.has(previousTwo) && !references.has(latest)) {
+          missing.push({ installation, client: clientByInstallation.get(installation) || 'Nome não informado' })
+        }
+      }
+      const orangeFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFD08A' } }
+      for (const record of records) {
+        if (!marked.has(record.installation)) continue
+        const row = worksheet.getRow(record.rowNumber)
+        row.eachCell({ includeEmpty: true }, cell => { cell.fill = orangeFill })
+      }
+      auditWorkbookRef.current = workbook
+      auditFileNameRef.current = file.name
+      setAuditResult({ fileName: file.name, months: latestMonths.map(auditMonthLabel), markedCount: marked.size, missing: missing.sort((a, b) => a.installation.localeCompare(b.installation, 'pt-BR')) })
+      setNotice('Auditoria concluída. O arquivo foi processado somente neste dispositivo; ele não foi enviado ao servidor.')
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'Não foi possível ler a planilha.'
+      setError(message)
+    } finally {
+      setAuditBusy(false)
+    }
+  }
+
+  async function downloadAuditedWorkbook() {
+    if (!auditWorkbookRef.current || !auditFileNameRef.current) return
+    try {
+      const output = await auditWorkbookRef.current.xlsx.writeBuffer()
+      const blob = new Blob([output as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = auditFileNameRef.current.replace(/\\.xlsx$/i, '') + '_auditada.xlsx'
+      link.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+      setNotice('Planilha auditada preparada para download.')
+    } catch {
+      setError('Não foi possível gerar a cópia auditada. Tente anexar a planilha novamente.')
+    }
+  }
+
+  function clearAudit() {
+    auditWorkbookRef.current = null
+    auditFileNameRef.current = ''
+    setAuditResult(null)
+    setError('')
+    setNotice('')
+  }
+
   function exportVisitCsv() {
     const visit = visits.find(item => item.id === selectedVisitId)
     if (!visit) return
@@ -639,7 +785,30 @@ export default function App() {
             </div>
             {visitTopics.filter(t => (globalTopicStatusFilter === 'Todos' || t.status === globalTopicStatusFilter) && (globalTopicCategoryFilter === 'Todas' || (t.category ?? 'Não categorizado') === globalTopicCategoryFilter)).length === 0 ? <div className="empty"><strong>Nenhum assunto encontrado</strong><span>Não há assuntos que correspondam aos filtros selecionados.</span></div> : <div className="global-topic-results">{visitTopics.filter(t => (globalTopicStatusFilter === 'Todos' || t.status === globalTopicStatusFilter) && (globalTopicCategoryFilter === 'Todas' || (t.category ?? 'Não categorizado') === globalTopicCategoryFilter)).map(topic => <div className="global-topic-row" key={topic.id}><span><strong>{topic.title}</strong><small>{topic.category ?? 'Não categorizado'} · {topic.status} · {visits.find(v => v.id === topic.visit_id)?.title ?? 'Ata não encontrada'} · {visits.find(v => v.id === topic.visit_id)?.visit_date ? new Date(visits.find(v => v.id === topic.visit_id)!.visit_date + 'T12:00:00').toLocaleDateString('pt-BR') : 'Sem data'}</small></span><button type="button" className="secondary-button" onClick={() => setSelectedVisitId(topic.visit_id)}>Abrir ata</button></div>)}</div>}
           </section>}
-                  {section === 'ouvidoria' && <section className="panel"><div className="empty"><ClipboardList size={28}/><strong>Auditoria</strong><span>Esta área será desenvolvida em breve.</span></div></section>}
+          {section === 'ouvidoria' && <>
+            <div className="audit-tabs" role="tablist" aria-label="Funcionalidades de auditoria">
+              <button type="button" role="tab" aria-selected="true" className="audit-tab active"><FileSpreadsheet size={16}/> Fatura não gerada</button>
+            </div>
+            <section className="panel audit-panel">
+              <div className="panel-heading"><div><h2>Fatura não gerada</h2><p>Anexe a planilha de faturamento para comparar automaticamente as três referências mais recentes.</p></div><span className="soft-tag">AUDITORIA POR INSTALAÇÃO</span></div>
+              <div className="audit-security-note"><ShieldCheck size={18}/><span><strong>Processamento protegido</strong>O arquivo é lido e auditado no seu próprio navegador. Ele não é enviado ao Watt-Wise, ao Supabase nem armazenado na conta.</span></div>
+              <label className="audit-upload" htmlFor="audit-spreadsheet"><Upload size={22}/><strong>{auditBusy ? 'Analisando planilha...' : 'Selecionar planilha Excel'}</strong><span>Formato .xlsx · até 10 MB</span><input id="audit-spreadsheet" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={auditBusy} onChange={e => { const file = e.target.files?.[0]; if (file) void auditInvoices(file); e.currentTarget.value = '' }}/></label>
+              {auditBusy && <div className="audit-progress"><span className="spin"><LoaderCircle size={17}/></span> Lendo as referências e comparando as instalações...</div>}
+              {auditResult && <>
+                <div className="audit-result-heading"><div><strong>Resultado da auditoria</strong><small>{auditResult.fileName}</small></div><div className="audit-actions"><button type="button" className="secondary-button" onClick={clearAudit}>Limpar</button><button type="button" className="primary-button" onClick={() => void downloadAuditedWorkbook()}><FileDown size={15}/> Baixar planilha auditada</button></div></div>
+                <div className="audit-months"><span>Referências identificadas:</span>{auditResult.months.map(month => <b key={month}>{month}</b>)}</div>
+                <div className="audit-summary">
+                  <div><span>Instalações com boleto nos 3 meses</span><strong>{auditResult.markedCount}</strong><small><i className="audit-dot orange"/> Linha inteira marcada em laranja</small></div>
+                  <div><span>Instalações sem boleto na referência mais recente</span><strong>{auditResult.missing.length}</strong><small><i className="audit-dot"/> Permanecem sem marcação</small></div>
+                </div>
+                <div className="audit-missing-list">
+                  <div className="audit-list-heading"><strong>Instalações para conferir</strong><span>{auditResult.missing.length} registro(s)</span></div>
+                  {auditResult.missing.length === 0 ? <div className="audit-empty">Nenhuma instalação encontrada com boleto nos dois meses anteriores e ausência na referência mais recente.</div> : <div className="audit-table-wrap"><table className="audit-table"><thead><tr><th>Cliente</th><th>Número da instalação</th></tr></thead><tbody>{auditResult.missing.map(item => <tr key={item.installation}><td>{item.client}</td><td>{item.installation}</td></tr>)}</tbody></table></div>}
+                </div>
+                <p className="audit-footnote">A marcação laranja é aplicada à linha inteira de todas as ocorrências da instalação quando ela aparece nas três referências. As instalações presentes nos dois meses anteriores, mas ausentes no mês mais recente, ficam sem a marcação.</p>
+              </>}
+            </section>
+          </>}
         {section === 'historico' && <section className="panel"><div className="panel-heading"><div><h2>Histórico de movimentações</h2><p>Consulte separadamente as alterações da Minha Agenda e da Visita à Cemig.</p></div><span className="soft-tag">{historyEvents.filter(event => historyFilter === 'agenda' ? event.entity_type === 'Atividade' : event.entity_type === 'Assunto').length} REGISTRO(S)</span></div><div className="history-filters"><button type="button" className={historyFilter === 'agenda' ? 'active' : ''} onClick={() => setHistoryFilter('agenda')}>Minha Agenda</button><button type="button" className={historyFilter === 'visitas' ? 'active' : ''} onClick={() => setHistoryFilter('visitas')}>Visita à Cemig</button></div>{historyEvents.filter(event => historyFilter === 'agenda' ? event.entity_type === 'Atividade' : event.entity_type === 'Assunto').length === 0 ? <div className="empty"><History size={28}/><strong>Nenhuma movimentação encontrada</strong><span>As próximas inclusões e alterações aparecerão aqui após a sincronização.</span></div> : <div className="history-list">{historyEvents.filter(event => historyFilter === 'agenda' ? event.entity_type === 'Atividade' : event.entity_type === 'Assunto').map(event => { const value = event.new_value ?? {}; const old = event.old_value ?? {}; const label = event.event_type === 'created' ? 'Criado' : event.event_type === 'status_changed' ? 'Status alterado' : event.event_type === 'schedule_changed' ? 'Data ou horário alterado' : 'Dados atualizados'; const detail = event.event_type === 'status_changed' ? `${old.status ?? '—'} → ${value.status ?? '—'}` : event.event_type === 'schedule_changed' ? `${old.date ?? '—'} ${old.time ?? ''} → ${value.date ?? '—'} ${value.time ?? ''}` : (value.title ?? old.title ?? 'Registro atualizado'); return <article className="history-item" key={event.id}><span className="history-marker"/><div className="history-copy"><div><strong>{detail}</strong><span className="history-kind">{event.entity_type} · {label}</span></div><time>{new Date(event.created_at).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})}</time></div></article> })}</div>}</section>}
         <footer>Watt-Wise <span>•</span> Em desenvolvimento</footer>
       </div>
