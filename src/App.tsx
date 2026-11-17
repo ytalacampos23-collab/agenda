@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarDays, ClipboardList, History, Plus, Search, FileDown, FileSpreadsheet, Upload, ShieldCheck, Menu, X, CheckCircle2, Clock3, AlertCircle, ChevronDown, ChevronLeft, ChevronRight, LogOut, LoaderCircle, Trash2, Pencil } from 'lucide-react'
+import { CalendarDays, ClipboardList, History, Plus, Search, FileDown, FileSpreadsheet, Upload, ShieldCheck, Menu, X, CheckCircle2, Clock3, AlertCircle, ChevronDown, ChevronLeft, ChevronRight, LogOut, LoaderCircle, Trash2, Pencil, BookOpen, Copy, Save } from 'lucide-react'
 import ExcelJS from 'exceljs'
 import { hasSupabaseConfig, supabase } from './lib/supabase'
 
@@ -9,6 +9,7 @@ type Task = { id: string; title: string; description: string | null; category: s
 type PendingChange = { id: string; task: Task; deleted_at: string | null }
 type Visit = { id: string; user_id: string; visit_date: string; title: string; participants: string | null; notes: string | null; created_at?: string }
 type VisitTopic = { id: string; visit_id: string; user_id: string; category?: string; title: string; description: string | null; responsible: string | null; protocol: string | null; due_date: string | null; status: 'Pendente' | 'Em análise' | 'Resolvido' | 'Não se aplica'; observations: string | null; origin_topic_id?: string | null }
+type LibraryItem = { id: string; user_id: string; kind: 'message' | 'documents'; title: string; content: string; created_at?: string; updated_at?: string }
 type TopicTransfer = { id: string; topic_id: string; from_visit_id: string; to_visit_id: string; user_id: string }; type PendingVisitChange = { table: 'visits' | 'visit_topics' | 'topic_transfers'; id: string; record: Visit | VisitTopic | TopicTransfer; action?: 'upsert' | 'delete' }
 const cacheKey = (id: string) => 'wattwise:' + id + ':tasks'
 const queueKey = (id: string) => 'wattwise:' + id + ':queue'
@@ -30,7 +31,7 @@ const categories = [
 const today = () => { const d = new Date(); return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-') }
 
 export default function App() {
-  const [section, setSection] = useState<'agenda' | 'visitas' | 'ouvidoria' | 'historico'>('agenda')
+  const [section, setSection] = useState<'agenda' | 'visitas' | 'biblioteca' | 'ouvidoria' | 'historico'>('agenda')
   const [sessionReady, setSessionReady] = useState(false)
   const [authVerified, setAuthVerified] = useState(false)
   const [userEmail, setUserEmail] = useState('')
@@ -48,6 +49,12 @@ export default function App() {
   const [showAddTaskForm, setShowAddTaskForm] = useState(false)
   const [visits, setVisits] = useState<Visit[]>([])
   const [visitTopics, setVisitTopics] = useState<VisitTopic[]>([])
+  const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([])
+  const [libraryKind, setLibraryKind] = useState<'message' | 'documents'>('message')
+  const [libraryTitle, setLibraryTitle] = useState('')
+  const [libraryContent, setLibraryContent] = useState('')
+  const [editingLibraryItem, setEditingLibraryItem] = useState<string | null>(null)
+  const [libraryBusy, setLibraryBusy] = useState(false)
   const [historyEvents, setHistoryEvents] = useState<Array<{id:string; created_at:string; event_type:string; old_value:any; new_value:any; entity_type:'Atividade'|'Assunto'}>>([])
   const [historyFilter, setHistoryFilter] = useState<'agenda' | 'visitas'>('agenda')
   const [selectedVisitId, setSelectedVisitId] = useState('')
@@ -74,6 +81,15 @@ export default function App() {
     const replacement = selected ? '**' + selected + '**' : '****'
     const next = value.slice(0, start) + replacement + value.slice(end)
     update(next)
+    requestAnimationFrame(() => { field.focus(); const cursorStart = selected ? start : start + 2; const cursorEnd = selected ? start + replacement.length : cursorStart; field.setSelectionRange(cursorStart, cursorEnd) })
+  }
+  function applyHighlightToNotes(ref: { current: HTMLTextAreaElement | null }, value: string, update: (value: string) => void) {
+    const field = ref.current
+    if (!field) return
+    const start = field.selectionStart, end = field.selectionEnd
+    const selected = value.slice(start, end)
+    const replacement = selected ? '==' + selected + '==' : '===='
+    update(value.slice(0, start) + replacement + value.slice(end))
     requestAnimationFrame(() => { field.focus(); const cursorStart = selected ? start : start + 2; const cursorEnd = selected ? start + replacement.length : cursorStart; field.setSelectionRange(cursorStart, cursorEnd) })
   }
   const [topicCategory, setTopicCategory] = useState('Troca de titularidade')
@@ -154,6 +170,7 @@ export default function App() {
     setTasks([])
     setVisits([])
     setVisitTopics([])
+    setLibraryItems([])
     setHistoryEvents([])
     setSelectedVisitId('')
     setPendingCount(readJson<PendingChange[]>(queueKey(userId), []).length + readJson<PendingVisitChange[]>(visitQueueKey(userId), []).length)
@@ -199,6 +216,9 @@ export default function App() {
           setHistoryEvents([...(taskHistory.data ?? []).map(e => ({...e,entity_type:'Atividade' as const})), ...(topicHistory.data ?? []).map(e => ({...e,entity_type:'Assunto' as const}))].sort((a,b) => b.created_at.localeCompare(a.created_at)))
           setVisits((visitResult.data ?? []) as Visit[]); saveVisitsCache(userId, (visitResult.data ?? []) as Visit[])
           setVisitTopics((topicResult.data ?? []) as VisitTopic[]); saveTopicsCache(userId, (topicResult.data ?? []) as VisitTopic[])
+          const libraryResult = await supabase!.from('cemig_library_items').select('id,user_id,kind,title,content,created_at,updated_at').order('created_at', { ascending: false })
+          if (libraryResult.error) throw libraryResult.error
+          setLibraryItems((libraryResult.data ?? []) as LibraryItem[])
           setPendingCount(readJson<PendingChange[]>(queueKey(userId), []).length + readJson<PendingVisitChange[]>(visitQueueKey(userId), []).length)
           setError('')
           setSyncFailed(false)
@@ -235,6 +255,34 @@ export default function App() {
     localStorage.setItem(visitQueueKey(userId), JSON.stringify(next))
     setPendingCount(readJson<PendingChange[]>(queueKey(userId), []).length + next.length)
     setSyncVersion(v => v + 1)
+  }
+
+  function resetLibraryForm() { setEditingLibraryItem(null); setLibraryTitle(''); setLibraryContent('') }
+  function editLibraryItem(item: LibraryItem) { setLibraryKind(item.kind); setEditingLibraryItem(item.id); setLibraryTitle(item.title); setLibraryContent(item.content) }
+  async function saveLibraryItem(event: FormEvent) {
+    event.preventDefault()
+    if (!supabase || !userId || !libraryTitle.trim() || !libraryContent.trim()) return
+    setLibraryBusy(true); setError('')
+    try {
+      const payload = { id: editingLibraryItem ?? crypto.randomUUID(), user_id: userId, kind: libraryKind, title: libraryTitle.trim(), content: libraryContent.trim() }
+      const result = await supabase.from('cemig_library_items').upsert(payload, { onConflict: 'id' }).select('id,user_id,kind,title,content,created_at,updated_at').single()
+      if (result.error) throw result.error
+      setLibraryItems(current => [result.data as LibraryItem, ...current.filter(item => item.id !== payload.id)])
+      resetLibraryForm(); setNotice('Registro salvo na biblioteca.')
+    } catch (e) { setError('Não foi possível salvar na biblioteca: ' + ((e as {message?:string}).message ?? 'erro inesperado')) }
+    finally { setLibraryBusy(false) }
+  }
+  async function deleteLibraryItem(item: LibraryItem) {
+    if (!supabase || !userId || !window.confirm('Excluir "' + item.title + '" da biblioteca?')) return
+    setLibraryBusy(true)
+    try {
+      const result = await supabase.from('cemig_library_items').delete().eq('id', item.id).eq('user_id', userId)
+      if (result.error) throw result.error
+      setLibraryItems(current => current.filter(entry => entry.id !== item.id))
+      if (editingLibraryItem === item.id) resetLibraryForm()
+      setNotice('Registro excluído da biblioteca.')
+    } catch (e) { setError('Não foi possível excluir: ' + ((e as {message?:string}).message ?? 'erro inesperado')) }
+    finally { setLibraryBusy(false) }
   }
 
   function collectTopicDescendants(rootIds: string[]) {
@@ -682,6 +730,7 @@ export default function App() {
   const nav = [
     { id: 'agenda' as const, label: 'Minha Agenda', icon: CalendarDays },
     { id: 'visitas' as const, label: 'Visita à Cemig', icon: ClipboardList },
+    { id: 'biblioteca' as const, label: 'Biblioteca', icon: BookOpen },
     { id: 'ouvidoria' as const, label: 'Auditoria', icon: ClipboardList },
     { id: 'historico' as const, label: 'Histórico', icon: History },
   ]
@@ -709,7 +758,7 @@ export default function App() {
     <main className="main">
       <header className="topbar"><button className="menu-button" onClick={() => setMobileOpen(true)}><Menu/></button><div className="breadcrumb">Watt-Wise <span>/</span> {nav.find(n => n.id === section)?.label}</div><div className={'sync-indicator ' + (!isOnline ? 'offline' : syncing ? 'syncing' : syncFailed ? 'pending' : pendingCount ? 'pending' : 'online')}><span className="sync-dot"/>{!isOnline ? 'Off-line' : syncing ? 'Sincronizando...' : syncFailed ? 'Falha na sincronização' : pendingCount ? pendingCount + ' pendente(s)' : 'Sincronizado'}</div><button className="profile" onClick={signOut} title="Sair da conta"><LogOut size={14}/> Sair <ChevronDown size={14}/></button></header>
       <div className="content">
-        <div className="welcome"><div><div className="eyebrow">PAINEL DE CONTROLE</div><h1>{section === 'agenda' ? 'Minha Agenda' : section === 'visitas' ? 'Visita à Cemig' : section === 'ouvidoria' ? 'Auditoria' : 'Histórico'}</h1><p>{section === 'agenda' ? 'Organize suas atividades e acompanhe suas prioridades.' : section === 'visitas' ? 'Registre atas, encaminhamentos e pendências das visitas.' : section === 'ouvidoria' ? 'Área reservada para desenvolvimento dos registros e acompanhamentos da Auditoria.' : 'Acompanhe as movimentações registradas no sistema.'}</p></div><label className="date-chip"><CalendarDays size={16}/><span>Data</span><input aria-label="Selecionar data" type="date" value={selectedDashboardDate} onChange={e => setSelectedDashboardDate(e.target.value)}/></label></div>
+        <div className="welcome"><div><div className="eyebrow">PAINEL DE CONTROLE</div><h1>{section === 'agenda' ? 'Minha Agenda' : section === 'visitas' ? 'Visita à Cemig' : section === 'biblioteca' ? 'Biblioteca' : section === 'ouvidoria' ? 'Auditoria' : 'Histórico'}</h1><p>{section === 'agenda' ? 'Organize suas atividades e acompanhe suas prioridades.' : section === 'visitas' ? 'Registre atas, encaminhamentos e pendências das visitas.' : section === 'ouvidoria' ? 'Área reservada para desenvolvimento dos registros e acompanhamentos da Auditoria.' : 'Acompanhe as movimentações registradas no sistema.'}</p></div><label className="date-chip"><CalendarDays size={16}/><span>Data</span><input aria-label="Selecionar data" type="date" value={selectedDashboardDate} onChange={e => setSelectedDashboardDate(e.target.value)}/></label></div>
 
         {error && <div className="error-message">{error}<button onClick={() => setError('')}>Fechar</button></div>}
         {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')}>Fechar</button></div>}
@@ -760,7 +809,7 @@ export default function App() {
               <label>Data da visita<input type="date" required value={visitDate} onChange={e => setVisitDate(e.target.value)}/></label>
               <label className="wide">Título da ata<input required value={visitTitle} onChange={e => setVisitTitle(e.target.value)}/></label>
               <label className="wide">Participantes<input value={participants} onChange={e => setParticipants(e.target.value)} placeholder="Nomes dos participantes"/></label>
-              <label className="wide notes-field">Observações gerais<div className="notes-toolbar"><button type="button" className="format-button" onClick={() => applyBoldToNotes(visitNotesRef, visitNotes, setVisitNotes)}><strong>B</strong> Negrito</button><small>Selecione um trecho e clique para destacar.</small></div><textarea ref={visitNotesRef} rows={7} value={visitNotes} onChange={e => setVisitNotes(e.target.value)} placeholder="Registre aqui todas as informações importantes da visita..."/></label>
+              <label className="wide notes-field">Observações gerais<div className="notes-toolbar"><button type="button" className="format-button" onClick={() => applyBoldToNotes(visitNotesRef, visitNotes, setVisitNotes)}><strong>B</strong> Negrito</button><button type="button" className="format-button highlight-format" onClick={() => applyHighlightToNotes(visitNotesRef, visitNotes, setVisitNotes)}>Marca-texto</button><small>Selecione um trecho e clique para destacar.</small></div><textarea ref={visitNotesRef} rows={7} value={visitNotes} onChange={e => setVisitNotes(e.target.value)} placeholder="Registre aqui todas as informações importantes da visita..."/></label>
               <div className="wide form-action"><button className="primary-button"><Plus size={17}/>Salvar visita</button></div>
             </form>
           </section>
@@ -775,7 +824,7 @@ export default function App() {
               <label>Data da visita<input type="date" required value={editingVisit.visit_date} onChange={e => setEditingVisit({ ...editingVisit, visit_date: e.target.value })}/></label>
               <label className="wide">Título da ata<input required value={editingVisit.title} onChange={e => setEditingVisit({ ...editingVisit, title: e.target.value })}/></label>
               <label className="wide">Participantes<input value={editingVisit.participants ?? ''} onChange={e => setEditingVisit({ ...editingVisit, participants: e.target.value })}/></label>
-              <label className="wide notes-field">Observações gerais<div className="notes-toolbar"><button type="button" className="format-button" onClick={() => applyBoldToNotes(editVisitNotesRef, editingVisit.notes ?? '', value => setEditingVisit({ ...editingVisit, notes: value }))}><strong>B</strong> Negrito</button><small>Selecione um trecho e clique para destacar.</small></div><textarea ref={editVisitNotesRef} rows={7} value={editingVisit.notes ?? ''} onChange={e => setEditingVisit({ ...editingVisit, notes: e.target.value })}/></label>
+              <label className="wide notes-field">Observações gerais<div className="notes-toolbar"><button type="button" className="format-button" onClick={() => applyBoldToNotes(editVisitNotesRef, editingVisit.notes ?? '', value => setEditingVisit({ ...editingVisit, notes: value }))}><strong>B</strong> Negrito</button><button type="button" className="format-button highlight-format" onClick={() => applyHighlightToNotes(editVisitNotesRef, editingVisit.notes ?? '', value => setEditingVisit({ ...editingVisit, notes: value }))}>Marca-texto</button><small>Selecione um trecho e clique para destacar.</small></div><textarea ref={editVisitNotesRef} rows={7} value={editingVisit.notes ?? ''} onChange={e => setEditingVisit({ ...editingVisit, notes: e.target.value })}/></label>
               <div className="wide edit-actions"><button className="primary-button" type="submit">Salvar alterações</button><button className="secondary-button" type="button" onClick={() => setEditingVisit(null)}>Cancelar</button></div>
             </form>}
             <form className="form-grid" onSubmit={addVisitTopic}>
@@ -801,6 +850,17 @@ export default function App() {
               <button type="button" className="secondary-button" onClick={() => { setGlobalTopicStatusFilter('Todos'); setGlobalTopicCategoryFilter('Todas') }}>Limpar filtros</button>
             </div>
             {visitTopics.filter(t => (globalTopicStatusFilter === 'Todos' || t.status === globalTopicStatusFilter) && (globalTopicCategoryFilter === 'Todas' || (t.category ?? 'Não categorizado') === globalTopicCategoryFilter)).length === 0 ? <div className="empty"><strong>Nenhum assunto encontrado</strong><span>Não há assuntos que correspondam aos filtros selecionados.</span></div> : <div className="global-topic-results">{visitTopics.filter(t => (globalTopicStatusFilter === 'Todos' || t.status === globalTopicStatusFilter) && (globalTopicCategoryFilter === 'Todas' || (t.category ?? 'Não categorizado') === globalTopicCategoryFilter)).map(topic => <div className="global-topic-row" key={topic.id}><span><strong>{topic.title}</strong><small>{topic.category ?? 'Não categorizado'} · {topic.status} · {visits.find(v => v.id === topic.visit_id)?.title ?? 'Ata não encontrada'} · {visits.find(v => v.id === topic.visit_id)?.visit_date ? new Date(visits.find(v => v.id === topic.visit_id)!.visit_date + 'T12:00:00').toLocaleDateString('pt-BR') : 'Sem data'}</small></span><button type="button" className="secondary-button" onClick={() => setSelectedVisitId(topic.visit_id)}>Abrir ata</button></div>)}</div>}
+          </section>}
+          {section === 'biblioteca' && <section className="panel library-panel">
+            <div className="panel-heading"><div><h2>Biblioteca da Cemig</h2><p>Organize mensagens para clientes e documentos necessários por tipo de solicitação.</p></div><span className="soft-tag">{libraryItems.length} ITEM(NS)</span></div>
+            <div className="library-tabs"><button type="button" className={libraryKind === 'message' ? 'active' : ''} onClick={() => {setLibraryKind('message');resetLibraryForm()}}>Mensagens prontas</button><button type="button" className={libraryKind === 'documents' ? 'active' : ''} onClick={() => {setLibraryKind('documents');resetLibraryForm()}}>Documentos necessários</button></div>
+            <form className="library-editor" onSubmit={saveLibraryItem}>
+              <h3>{editingLibraryItem ? 'Editar registro' : libraryKind === 'message' ? 'Nova mensagem pronta' : 'Novo tipo de solicitação'}</h3>
+              <label>{libraryKind === 'message' ? 'Título da mensagem' : 'Tipo de solicitação'}<input required value={libraryTitle} onChange={e => setLibraryTitle(e.target.value)} placeholder={libraryKind === 'message' ? 'Ex.: Solicitação aprovada' : 'Ex.: Troca de titularidade'}/></label>
+              <label>{libraryKind === 'message' ? 'Texto da mensagem' : 'Documentos e orientações'}<textarea required rows={5} value={libraryContent} onChange={e => setLibraryContent(e.target.value)} placeholder={libraryKind === 'message' ? 'Digite a mensagem para enviar ao cliente...' : 'Registre os documentos necessários, um por linha. Não é necessário anexar arquivos.'}/></label>
+              <div className="library-editor-actions"><button className="primary-button" type="submit" disabled={libraryBusy || !libraryTitle.trim() || !libraryContent.trim()}><Save size={15}/>{libraryBusy ? 'Salvando...' : editingLibraryItem ? 'Salvar alterações' : 'Adicionar à biblioteca'}</button>{editingLibraryItem && <button type="button" className="secondary-button" onClick={resetLibraryForm}>Cancelar</button>}</div>
+            </form>
+            <div className="library-items">{libraryItems.filter(item => item.kind === libraryKind).length === 0 ? <div className="empty"><BookOpen size={28}/><strong>Nenhum registro cadastrado</strong><span>{libraryKind === 'message' ? 'Adicione suas mensagens prontas. Todos os tipos de retorno ficam reunidos nesta lista.' : 'Adicione cada tipo de solicitação e registre os documentos necessários.'}</span></div> : libraryItems.filter(item => item.kind === libraryKind).map(item => <article className="library-item" key={item.id}><div className="library-item-heading"><strong>{item.title}</strong><div><button type="button" className="icon-button" title="Editar" onClick={() => editLibraryItem(item)}><Pencil size={14}/></button><button type="button" className="icon-button danger-icon" title="Excluir" onClick={() => deleteLibraryItem(item)}><Trash2 size={14}/></button></div></div><p>{item.content}</p>{libraryKind === 'message' && <button type="button" className="secondary-button library-copy" onClick={() => {void navigator.clipboard.writeText(item.content).then(() => setNotice('Mensagem copiada.')).catch(() => setError('Não foi possível copiar a mensagem.'))}}><Copy size={14}/> Copiar mensagem</button>}</article>)}</div>
           </section>}
           {section === 'ouvidoria' && <>
             <div className="audit-tabs" role="tablist" aria-label="Funcionalidades de auditoria">
