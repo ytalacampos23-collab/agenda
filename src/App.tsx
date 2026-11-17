@@ -93,7 +93,7 @@ export default function App() {
   const [time, setTime] = useState('')
   const [priority, setPriority] = useState<Priority>('Média')
   const [assignedTo, setAssignedTo] = useState('')
-  const [showOnCalendar, setShowOnCalendar] = useState(true)
+  const [showOnCalendar, setShowOnCalendar] = useState(false)
   const [assigneeFilter, setAssigneeFilter] = useState('Todas')
   const [statusFilter, setStatusFilter] = useState('Todos')
   const [categoryFilter, setCategoryFilter] = useState('Todas')
@@ -338,7 +338,7 @@ export default function App() {
     const nextTasks = [...tasks, task].sort((a,b) => a.due_date.localeCompare(b.due_date))
     setTasks(nextTasks); saveTaskCache(userId, nextTasks)
     queueChange(task)
-    setTitle(''); setDescription(''); setTime(''); setPriority('Média'); setAssignedTo(''); setShowOnCalendar(true); setDate(today())
+    setTitle(''); setDescription(''); setTime(''); setPriority('Média'); setAssignedTo(''); setShowOnCalendar(false); setDate(today())
     setNotice(isOnline ? 'Atividade salva neste dispositivo e enviada para sincronização.' : 'Atividade salva neste dispositivo. Será sincronizada quando a internet voltar.')
   }
 
