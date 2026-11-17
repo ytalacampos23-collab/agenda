@@ -116,6 +116,7 @@ export default function App() {
     if (!supabase) { setSessionReady(true); return }
     let active = true
     const verifySession = async () => {
+      if (active) setSessionReady(false)
       try {
         if (!navigator.onLine) { if (active) { setAuthVerified(false); setUserEmail(''); setUserId('') }; return }
         const { data: sessionData, error: sessionError } = await supabase!.auth.getSession()
@@ -139,7 +140,7 @@ export default function App() {
       }
     })
     return () => { active = false; listener.subscription.unsubscribe() }
-  }, [])
+  }, [isOnline])
 
   useEffect(() => {
     const update = () => setIsOnline(navigator.onLine)
