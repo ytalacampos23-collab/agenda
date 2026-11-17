@@ -903,7 +903,7 @@ export default function App() {
             {visitTopics.filter(t => (globalTopicStatusFilter === 'Todos' || t.status === globalTopicStatusFilter) && (globalTopicCategoryFilter === 'Todas' || (t.category ?? 'Não categorizado') === globalTopicCategoryFilter)).length === 0 ? <div className="empty"><strong>Nenhum assunto encontrado</strong><span>Não há assuntos que correspondam aos filtros selecionados.</span></div> : <div className="global-topic-results">{visitTopics.filter(t => (globalTopicStatusFilter === 'Todos' || t.status === globalTopicStatusFilter) && (globalTopicCategoryFilter === 'Todas' || (t.category ?? 'Não categorizado') === globalTopicCategoryFilter)).map(topic => <div className="global-topic-row" key={topic.id}><span><strong>{topic.title}</strong><small>{topic.category ?? 'Não categorizado'} · {topic.status} · {visits.find(v => v.id === topic.visit_id)?.title ?? 'Ata não encontrada'} · {visits.find(v => v.id === topic.visit_id)?.visit_date ? new Date(visits.find(v => v.id === topic.visit_id)!.visit_date + 'T12:00:00').toLocaleDateString('pt-BR') : 'Sem data'}</small></span><button type="button" className="secondary-button" onClick={() => setSelectedVisitId(topic.visit_id)}>Abrir ata</button></div>)}</div>}
           </>}
           </section>}
-          {visitPageTab === 'library' && <section className="panel library-panel">
+          {section === 'visitas' && visitPageTab === 'library' && <section className="panel library-panel">
             <div className="library-hero">
               <div className="library-hero-icon"><BookOpen size={23}/></div>
               <div className="library-hero-copy"><span>BASE DE APOIO</span><h2>Biblioteca da Cemig</h2><p>Encontre rapidamente mensagens e documentos usados nos atendimentos.</p></div>
