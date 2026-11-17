@@ -74,6 +74,7 @@ const today = () => { const d = new Date(); return [d.getFullYear(), String(d.ge
 export default function App() {
   const [section, setSection] = useState<'agenda' | 'visitas' | 'ouvidoria' | 'historico'>('agenda')
   const [visitPageTab, setVisitPageTab] = useState<'visits' | 'library'>('visits')
+  const [agendaPageTab, setAgendaPageTab] = useState<'agenda' | 'meetings'>('agenda')
   const [sessionReady, setSessionReady] = useState(false)
   const [authVerified, setAuthVerified] = useState(false)
   const [userEmail, setUserEmail] = useState('')
@@ -844,6 +845,11 @@ export default function App() {
         {error && <div className="error-message">{error}<button onClick={() => setError('')}>Fechar</button></div>}
         {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')}>Fechar</button></div>}
         {section === 'agenda' && <>
+          <div className="visit-page-tabs" role="tablist" aria-label="Seções da Minha Agenda">
+            <button type="button" role="tab" aria-selected={agendaPageTab === 'agenda'} className={agendaPageTab === 'agenda' ? 'active' : ''} onClick={() => setAgendaPageTab('agenda')}><CalendarDays size={16}/> Agenda</button>
+            <button type="button" role="tab" aria-selected={agendaPageTab === 'meetings'} className={agendaPageTab === 'meetings' ? 'active' : ''} onClick={() => setAgendaPageTab('meetings')}><CalendarClock size={16}/> Reunião</button>
+          </div>
+          {agendaPageTab === 'agenda' && <>
           <div className="stats">
             <div className="stat-card"><span>Atividades cadastradas</span><strong>{tasks.length}</strong><CalendarDays/></div>
             <div className="stat-card"><span>A fazer</span><strong>{tasks.filter(t => t.status === 'A fazer').length}</strong><AlertCircle/></div>
@@ -876,6 +882,8 @@ export default function App() {
             <div className="calendar-toolbar"><div className="calendar-modes"><button type="button" className={calendarView === 'month' ? 'active' : ''} onClick={() => setCalendarView('month')}>Mês</button><button type="button" className={calendarView === 'week' ? 'active' : ''} onClick={() => setCalendarView('week')}>Semana</button><button type="button" className={calendarView === 'day' ? 'active' : ''} onClick={() => setCalendarView('day')}>Dia</button></div><div className="calendar-navigation"><button type="button" onClick={() => moveCalendar(-1)} aria-label="Período anterior"><ChevronLeft size={16}/></button><strong>{calendarHeading}</strong><button type="button" onClick={() => moveCalendar(1)} aria-label="Próximo período"><ChevronRight size={16}/></button><button type="button" onClick={() => setCalendarDate(today())}>Hoje</button></div></div>
             <div className={'calendar-grid ' + calendarView}>{calendarView !== 'day' && ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(day => <div className="calendar-weekday" key={day}>{day}</div>)}{calendarDays.map(day => <div key={day} className={'calendar-cell ' + (day.slice(0,7) !== calendarDate.slice(0,7) && calendarView === 'month' ? 'outside-month' : '') + (day === today() ? ' is-today' : '')}><button type="button" className="calendar-day" onClick={() => {setCalendarDate(day);setCalendarView('day')}}>{new Date(day + 'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit', ...(calendarView === 'day' ? {month:'long'} : {})})}</button>{tasks.filter(task => task.due_date === day && task.show_on_calendar !== false).map(task => <button type="button" key={task.id} className={'calendar-event ' + (task.status === 'Concluído' ? 'done' : task.priority === 'Urgente' ? 'urgent' : '')} onClick={() => { clearTaskFilters(); setEditingTask({...task}) }} title={task.title}>{task.due_time ? task.due_time.slice(0,5) + ' · ' : ''}{task.title}</button>)}</div>)}</div></>}
           </section>
+          </>}
+          {agendaPageTab === 'meetings' && <>
           <section className="panel meetings-panel">
             <button type="button" className="panel-heading collapsible-panel-heading" aria-expanded={meetingFormOpen} onClick={() => setMeetingFormOpen(open => !open)}>
               <div><h2>{editingMeetingId ? 'Editar reunião / agendamento' : 'Cadastrar reunião / agendamento'}</h2><p>Registre data, horário, prioridade e observações importantes.</p></div>
@@ -899,6 +907,7 @@ export default function App() {
               <div className="meeting-card-footer"><span className={'meeting-status meeting-status-' + meeting.status.toLowerCase().replace(/ /g,'-')}>{meeting.status}</span><select aria-label={'Status de ' + meeting.title} value={meeting.status} onChange={e => changeStatus(meeting.id,e.target.value as TaskStatus)}><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select></div>
             </article>)}</div>}
           </section>
+          </>}
         </>}
         {section === 'visitas' && <>
           <div className="visit-page-tabs" role="tablist" aria-label="Seções da Visita à Cemig">
