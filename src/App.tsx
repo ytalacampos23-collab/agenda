@@ -52,6 +52,8 @@ export default function App() {
   const [editingTopic, setEditingTopic] = useState<VisitTopic | null>(null)
   const [topicStatusFilter, setTopicStatusFilter] = useState('Todos')
   const [topicCategoryFilter, setTopicCategoryFilter] = useState('Todas')
+  const [globalTopicStatusFilter, setGlobalTopicStatusFilter] = useState('Todos')
+  const [globalTopicCategoryFilter, setGlobalTopicCategoryFilter] = useState('Todas')
   const [visitDate, setVisitDate] = useState(today())
   const [visitTitle, setVisitTitle] = useState('Visita à Cemig')
   const [participants, setParticipants] = useState('')
@@ -592,6 +594,15 @@ export default function App() {
               <label className="wide notes-field">Observações gerais<div className="notes-toolbar"><button type="button" className="format-button" onClick={() => applyBoldToNotes(visitNotesRef, visitNotes, setVisitNotes)}><strong>B</strong> Negrito</button><small>Selecione um trecho e clique para destacar.</small></div><textarea ref={visitNotesRef} rows={7} value={visitNotes} onChange={e => setVisitNotes(e.target.value)} placeholder="Registre aqui todas as informações importantes da visita..."/></label>
               <div className="wide form-action"><button className="primary-button"><Plus size={17}/>Salvar visita</button></div>
             </form>
+          </section>
+          <section className="panel global-topic-search">
+            <div className="panel-heading"><div><h2>Filtro geral de assuntos</h2><p>Pesquise assuntos de todas as atas cadastradas, sem precisar abrir cada uma.</p></div><span className="soft-tag">{visitTopics.filter(t => (globalTopicStatusFilter === 'Todos' || t.status === globalTopicStatusFilter) && (globalTopicCategoryFilter === 'Todas' || (t.category ?? 'Não categorizado') === globalTopicCategoryFilter)).length} ASSUNTO(S)</span></div>
+            <div className="topic-filters">
+              <label>Status<select value={globalTopicStatusFilter} onChange={e => setGlobalTopicStatusFilter(e.target.value)}><option>Todos</option><option>Pendente</option><option>Em análise</option><option>Resolvido</option><option>Não se aplica</option></select></label>
+              <label>Categoria<select value={globalTopicCategoryFilter} onChange={e => setGlobalTopicCategoryFilter(e.target.value)}><option>Todas</option><option>Troca de titularidade</option><option>Transferência saldo de geração</option><option>Fatura Cemig</option><option>Primeira Ligação</option><option>CPF divergente na Cemig</option><option>Não categorizado</option></select></label>
+              <button type="button" className="secondary-button" onClick={() => { setGlobalTopicStatusFilter('Todos'); setGlobalTopicCategoryFilter('Todas') }}>Limpar filtros</button>
+            </div>
+            {visitTopics.filter(t => (globalTopicStatusFilter === 'Todos' || t.status === globalTopicStatusFilter) && (globalTopicCategoryFilter === 'Todas' || (t.category ?? 'Não categorizado') === globalTopicCategoryFilter)).length === 0 ? <div className="empty"><strong>Nenhum assunto encontrado</strong><span>Não há assuntos que correspondam aos filtros selecionados.</span></div> : <div className="global-topic-results">{visitTopics.filter(t => (globalTopicStatusFilter === 'Todos' || t.status === globalTopicStatusFilter) && (globalTopicCategoryFilter === 'Todas' || (t.category ?? 'Não categorizado') === globalTopicCategoryFilter)).map(topic => <div className="global-topic-row" key={topic.id}><span><strong>{topic.title}</strong><small>{topic.category ?? 'Não categorizado'} · {topic.status} · {visits.find(v => v.id === topic.visit_id)?.title ?? 'Ata não encontrada'} · {visits.find(v => v.id === topic.visit_id)?.visit_date ? new Date(visits.find(v => v.id === topic.visit_id)!.visit_date + 'T12:00:00').toLocaleDateString('pt-BR') : 'Sem data'}</small></span><button type="button" className="secondary-button" onClick={() => setSelectedVisitId(topic.visit_id)}>Abrir ata</button></div>)}</div>}
           </section>
           <section className="panel">
             <div className="panel-heading"><div><h2>Atas registradas</h2><p>Selecione uma visita para consultar ou incluir assuntos.</p></div><span className="soft-tag">{visits.length} VISITA(S)</span></div>
