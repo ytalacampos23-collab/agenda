@@ -108,9 +108,9 @@ export default function App() {
   const [visitNotes, setVisitNotes] = useState('')
   const [visitFormOpen, setVisitFormOpen] = useState(true)
   const visitNotesRef = useRef<HTMLDivElement>(null)
-  const topicObservationsRef = useRef<HTMLTextAreaElement>(null)
-  const editTopicObservationsRef = useRef<HTMLTextAreaElement>(null)
-  const editVisitNotesRef = useRef<HTMLTextAreaElement>(null)
+  const topicObservationsRef = useRef<HTMLDivElement>(null)
+  const editTopicObservationsRef = useRef<HTMLDivElement>(null)
+  const editVisitNotesRef = useRef<HTMLDivElement>(null)
   function applyBoldToNotes(ref: { current: HTMLDivElement | null }, _value: string, update: (value: string) => void) {
     const field = ref.current
     if (!field) return
