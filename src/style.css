@@ -301,3 +301,6 @@
 @media(max-width:480px){.meeting-card{padding:13px}.meeting-card-top{align-items:flex-start}.meeting-card-title{align-items:flex-start}.meeting-card-title h3{font-size:13px}.meeting-date{font-size:10px}}
 
 .meeting-form .rich-notes-editor{min-height:240px}
+
+/* Mantém o selo de prioridade compacto dentro dos detalhes da atividade */
+.task-info span .priority-badge{display:inline-flex;vertical-align:middle;width:fit-content}
