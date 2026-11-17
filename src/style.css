@@ -265,3 +265,11 @@
 .library-item:has(.library-message-toggle){padding-top:13px;padding-bottom:13px}
 .library-item:has(.library-message-toggle) .library-item-heading{align-items:center}
 .library-item:has(.library-message-toggle) .library-item-title{gap:0}
+
+/* Documentos da biblioteca em formato compacto e expansível */
+.library-document-toggle{display:flex;flex-direction:column;align-items:flex-start;gap:5px;padding:0;border:0;background:transparent;text-align:left;color:#31554a;font:inherit;font-size:13px;font-weight:750;line-height:1.4;cursor:pointer;overflow-wrap:anywhere}
+.library-document-toggle>span{color:#71877c;font-size:10px;font-weight:650}
+.library-document-toggle:hover{color:#1c6555}
+.library-item:has(.library-document-toggle){padding-top:13px;padding-bottom:13px}
+.library-item:has(.library-document-toggle) .library-item-heading{align-items:center}
+.library-item:has(.library-document-toggle) .library-item-title{gap:0}
