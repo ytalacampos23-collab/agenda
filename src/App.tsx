@@ -433,11 +433,11 @@ export default function App() {
         for (let rowNumber = 1; rowNumber <= scanLimit; rowNumber++) {
           const row = worksheet.getRow(rowNumber)
           let installationCol = 0, referenceCol = 0, clientCol = 0
-          row.eachCell({ includeEmpty: false }, cell => {
+          row.eachCell({ includeEmpty: false }, (cell, columnNumber) => {
             const heading = normalizeAuditText(auditCellValue(cell))
-            if (!installationCol && heading.includes('instal')) installationCol = cell.col
-            if (!referenceCol && (heading.includes('refer') || heading.includes('compet') || heading === 'mes' || heading.includes('mes ref'))) referenceCol = cell.col
-            if (!clientCol && (heading.includes('cliente') || heading === 'nome' || heading.includes('nome do cliente'))) clientCol = cell.col
+            if (!installationCol && heading.includes('instal')) installationCol = columnNumber
+            if (!referenceCol && (heading.includes('refer') || heading.includes('compet') || heading === 'mes' || heading.includes('mes ref'))) referenceCol = columnNumber
+            if (!clientCol && (heading.includes('cliente') || heading === 'nome' || heading.includes('nome do cliente'))) clientCol = columnNumber
           })
           if (installationCol && referenceCol) { target = { worksheet, headerRow: rowNumber, installationCol, referenceCol, clientCol }; break }
         }
