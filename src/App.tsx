@@ -12,8 +12,12 @@ type VisitTopic = { id: string; visit_id: string; user_id: string; category?: st
 type LibraryItem = { id: string; user_id: string; kind: 'message' | 'documents'; title: string; content: string; created_at?: string; updated_at?: string }
 type TopicTransfer = { id: string; topic_id: string; from_visit_id: string; to_visit_id: string; user_id: string }; type PendingVisitChange = { table: 'visits' | 'visit_topics' | 'topic_transfers'; id: string; record: Visit | VisitTopic | TopicTransfer; action?: 'upsert' | 'delete' }
 function safeRichHtml(value: string | null | undefined) {
-  const raw = String(value ?? '');
-  if (!/[<](?:b|strong|mark|br|p|div)\\b/i.test(raw)) {
+  let raw = String(value ?? '');
+  // Recupera conteúdo que versões anteriores possam ter salvo como HTML escapado.
+  if (/&lt;\\/?(?:span|b|strong|mark|br|p|div)\\b/i.test(raw)) {
+    raw = raw.replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;/gi, "'");
+  }
+  if (!/<\\/?[a-z][^>]*>/i.test(raw)) {
     return raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')
       .replace(/==(.*?)==/g, '<mark>$1</mark>').replace(/\\n/g, '<br>');
@@ -27,6 +31,12 @@ function safeRichHtml(value: string | null | undefined) {
     const content = Array.from(el.childNodes).map(clean).join('');
     if (tag === 'b' || tag === 'strong') return '<strong>' + content + '</strong>';
     if (tag === 'mark') return '<mark>' + content + '</mark>';
+    if (tag === 'span') {
+      const style = (el.getAttribute('style') ?? '').toLowerCase();
+      if (/background(-color)?\\s*:\\s*(#fff176|yellow|rgb\\(255,\\s*241,\\s*118\\))/i.test(style)) return '<mark>' + content + '</mark>';
+      if (/font-weight\\s*:\\s*(bold|bolder|[6-9]00)/i.test(style)) return '<strong>' + content + '</strong>';
+      return content;
+    }
     if (tag === 'br') return '<br>';
     if (tag === 'p' || tag === 'div') return content + '<br>';
     return content;
