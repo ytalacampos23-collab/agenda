@@ -273,3 +273,11 @@
 .library-item:has(.library-document-toggle){padding-top:13px;padding-bottom:13px}
 .library-item:has(.library-document-toggle) .library-item-heading{align-items:center}
 .library-item:has(.library-document-toggle) .library-item-title{gap:0}
+
+
+/* Editor de observações com formatação visual real */
+.rich-notes-editor{width:100%;min-height:92px;padding:11px 13px;border:1px solid #d8e2dc;border-radius:10px;background:#fff;color:#263b32;font:inherit;font-size:13px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;outline:none}
+.notes-field:has([aria-multiline="true"]) .rich-notes-editor{min-height:110px}
+.rich-notes-editor:focus{border-color:#6c9b83;box-shadow:0 0 0 3px rgba(75,132,99,.12)}
+.rich-notes-editor:empty:before{content:attr(data-placeholder);color:#91a098;pointer-events:none}
+.rich-notes-editor mark{background:#fff176;color:#263b32;padding:0 .08em;border-radius:2px}
