@@ -70,3 +70,18 @@
 .format-button{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid #dfe7e2;border-radius:7px;background:#f8faf8;color:#53645c;font-size:12px;cursor:pointer}
 .format-button strong{font-size:14px}
 .format-button:hover{background:#eef4ef;border-color:#cbd9cf}
+
+/* Expansão das atas registradas */
+.visit-card-wrap{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:8px}
+.visit-card-wrap>.visit-card{grid-column:1;grid-row:1}
+.visit-card-wrap>.danger-icon{grid-column:2;grid-row:1;align-self:center}
+.visit-card svg{transition:transform .18s ease}
+.visit-card.expanded svg{transform:rotate(180deg)}
+.visit-topics-preview{grid-column:1/-1;background:#f8fbf9;border:1px solid #e6ede9;border-radius:9px;padding:12px 14px;margin-top:-2px}
+.visit-topics-preview>strong{display:block;font-size:11px;color:#49635b;margin-bottom:8px}
+.visit-topics-preview>small{font-size:11px;color:#82958d}
+.visit-preview-topic{padding:8px 0;border-top:1px solid #e9efeb}
+.visit-preview-topic:first-of-type{border-top:0}
+.visit-preview-topic b,.visit-preview-topic small{display:block}
+.visit-preview-topic b{font-size:11px;color:#38514d}
+.visit-preview-topic small{font-size:10px;color:#82958d;margin-top:4px}
