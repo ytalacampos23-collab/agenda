@@ -55,7 +55,6 @@ export default function App() {
   const [globalTopicStatusFilter, setGlobalTopicStatusFilter] = useState('Todos')
   const [globalTopicCategoryFilter, setGlobalTopicCategoryFilter] = useState('Todas')
   const [dashboardVisitFilter, setDashboardVisitFilter] = useState<'all' | 'visits' | 'Pendente' | 'Em análise' | 'Resolvido'>('all')
-  const [selectedDashboardDate, setSelectedDashboardDate] = useState(today())
   const [visitDate, setVisitDate] = useState(today())
   const [visitTitle, setVisitTitle] = useState('Visita à Cemig')
   const [participants, setParticipants] = useState('')
@@ -493,8 +492,6 @@ export default function App() {
   ), [tasks,statusFilter,categoryFilter,priorityFilter,assigneeFilter,dateFrom,dateTo,search])
   const overdueTasks = tasks.filter(t => t.status !== 'Concluído' && t.due_date < today())
   const dashboardVisits = dashboardVisitFilter === 'Pendente' || dashboardVisitFilter === 'Em análise' || dashboardVisitFilter === 'Resolvido' ? visits.filter(v => visitTopics.some(t => t.visit_id === v.id && t.status === dashboardVisitFilter)) : visits
-  const selectedDateHistory = historyEvents.filter(event => event.created_at.slice(0, 10) === selectedDashboardDate && (section === 'agenda' ? event.entity_type === 'Atividade' : event.entity_type === 'Assunto'))
-  const selectedDateVisits = visits.filter(visit => visit.visit_date === selectedDashboardDate)
   const clearTaskFilters = () => { setStatusFilter('Todos'); setCategoryFilter('Todas'); setPriorityFilter('Todas'); setAssigneeFilter('Todas'); setDateFrom(''); setDateTo(''); setSearch('') }
   const assignees = [...new Set(tasks.map(task => task.assigned_to?.trim()).filter((name): name is string => Boolean(name)))].sort((a,b) => a.localeCompare(b,'pt-BR'))
   const calendarStart = (() => {
@@ -546,13 +543,8 @@ export default function App() {
     <main className="main">
       <header className="topbar"><button className="menu-button" onClick={() => setMobileOpen(true)}><Menu/></button><div className="breadcrumb">Watt-Wise <span>/</span> {nav.find(n => n.id === section)?.label}</div><div className={'sync-indicator ' + (!isOnline ? 'offline' : syncing ? 'syncing' : syncFailed ? 'pending' : pendingCount ? 'pending' : 'online')}><span className="sync-dot"/>{!isOnline ? 'Off-line' : syncing ? 'Sincronizando...' : syncFailed ? 'Falha na sincronização' : pendingCount ? pendingCount + ' pendente(s)' : 'Sincronizado'}</div><button className="profile" onClick={signOut} title="Sair da conta"><LogOut size={14}/> Sair <ChevronDown size={14}/></button></header>
       <div className="content">
-        <div className="welcome"><div><div className="eyebrow">PAINEL DE CONTROLE</div><h1>{section === 'agenda' ? 'Minha Agenda' : section === 'visitas' ? 'Visitas à Cemig' : 'Histórico'}</h1><p>{section === 'agenda' ? 'Organize suas atividades e acompanhe suas prioridades.' : section === 'visitas' ? 'Registre atas, encaminhamentos e pendências das visitas.' : 'Acompanhe as movimentações registradas no sistema.'}</p></div><label className="date-chip"><CalendarDays size={16}/><span>Consultar data</span><input aria-label="Selecionar data para consultar o histórico" type="date" value={selectedDashboardDate} onChange={e => setSelectedDashboardDate(e.target.value)}/></label></div>
+        <div className="welcome"><div><div className="eyebrow">PAINEL DE CONTROLE</div><h1>{section === 'agenda' ? 'Minha Agenda' : section === 'visitas' ? 'Visitas à Cemig' : 'Histórico'}</h1><p>{section === 'agenda' ? 'Organize suas atividades e acompanhe suas prioridades.' : section === 'visitas' ? 'Registre atas, encaminhamentos e pendências das visitas.' : 'Acompanhe as movimentações registradas no sistema.'}</p></div></div>
 
-        {(section === 'agenda' || section === 'visitas') && <section className="panel date-history-panel">
-          <div className="panel-heading"><div><h2>Histórico de {new Date(selectedDashboardDate + 'T12:00:00').toLocaleDateString('pt-BR')}</h2><p>Movimentações registradas nesta data{section === 'visitas' ? ' e atas realizadas no dia' : ''}.</p></div><span className="soft-tag">{selectedDateHistory.length + (section === 'visitas' ? selectedDateVisits.length : 0)} REGISTRO(S)</span></div>
-          {section === 'visitas' && selectedDateVisits.map(visit => <article className="history-item" key={'visit-date-' + visit.id}><span className="history-marker"/><div className="history-copy"><div><strong>{visit.title}</strong><span className="history-kind">Visita/ata registrada · {visitTopics.filter(t => t.visit_id === visit.id).length} assunto(s)</span></div></div></article>)}
-          {selectedDateHistory.length === 0 && !(section === 'visitas' && selectedDateVisits.length) ? <div className="empty"><History size={24}/><strong>Nenhuma movimentação nesta data</strong><span>Selecione outra data para consultar o histórico correspondente.</span></div> : <div className="history-list">{selectedDateHistory.map(event => { const value = event.new_value ?? {}; const old = event.old_value ?? {}; const label = event.event_type === 'created' ? 'Criado' : event.event_type === 'status_changed' ? 'Status alterado' : event.event_type === 'schedule_changed' ? 'Data ou horário alterado' : 'Dados atualizados'; const detail = event.event_type === 'status_changed' ? old.status + ' → ' + value.status : event.event_type === 'schedule_changed' ? (old.date ?? '—') + ' ' + (old.time ?? '') + ' → ' + (value.date ?? '—') + ' ' + (value.time ?? '') : (value.title ?? old.title ?? 'Registro atualizado'); return <article className="history-item" key={'date-' + event.id}><span className="history-marker"/><div className="history-copy"><div><strong>{detail}</strong><span className="history-kind">{event.entity_type} · {label}</span></div><time>{new Date(event.created_at).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})}</time></div></article> })}</div>}
-        </section>}
         {error && <div className="error-message">{error}<button onClick={() => setError('')}>Fechar</button></div>}
         {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')}>Fechar</button></div>}
         {section === 'agenda' && <>
