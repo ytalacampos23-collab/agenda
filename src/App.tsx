@@ -900,8 +900,6 @@ export default function App() {
             </article>)}</div>}
           </section>
         </>}
-
-        </>}
         {section === 'visitas' && <>
           <div className="visit-page-tabs" role="tablist" aria-label="Seções da Visita à Cemig">
             <button type="button" role="tab" aria-selected={visitPageTab === 'visits'} className={visitPageTab === 'visits' ? 'active' : ''} onClick={() => setVisitPageTab('visits')}><ClipboardList size={16}/> Visitas</button>
