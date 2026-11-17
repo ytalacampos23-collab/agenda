@@ -109,3 +109,13 @@
 .topic-status-resolvido{background:#e5f3e8!important;border-color:#b8d9bf!important;color:#287343!important}
 .topic-status-não-se-aplica{background:#f0eef5!important;border-color:#d7d0e4!important;color:#66577d!important}
 @media(max-width:520px){.topic-filters{align-items:stretch}.topic-filters label{min-width:100%;}.topic-filters button{width:100%}}
+
+
+/* Consulta geral de assuntos em todas as atas */
+.global-topic-search{margin-bottom:18px}
+.global-topic-results{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.global-topic-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border:1px solid #e7eeea;border-radius:9px;background:#fff}
+.global-topic-row>span{display:flex;flex-direction:column;gap:4px;min-width:0}
+.global-topic-row strong{font-size:13px;color:#344e48}
+.global-topic-row small{font-size:11px;color:#788b84;line-height:1.45}
+@media(max-width:520px){.global-topic-row{align-items:flex-start;flex-direction:column}.global-topic-row .secondary-button{width:100%}}
