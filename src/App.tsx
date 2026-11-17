@@ -605,7 +605,8 @@ export default function App() {
               <div className="wide edit-actions"><button className="primary-button" type="submit">Salvar alterações</button><button className="secondary-button" type="button" onClick={() => setEditingVisit(null)}>Cancelar</button></div>
             </form>}
             <form className="form-grid" onSubmit={addVisitTopic}>
-              <label>Categoria<select value={topicCategory} onChange={e => setTopicCategory(e.target.value)}><option>Troca de titularidade</option><option>Transferência saldo de geração</option><option>Fatura Cemig</option><option>Primeira Ligação</option><option>CPF divergente na Cemig</option></select></label>\n              <label className="wide">Assunto<input required value={topicTitle} onChange={e => setTopicTitle(e.target.value)} placeholder="Ex.: Retorno sobre solicitação"/></label>
+              <label>Categoria<select value={topicCategory} onChange={e => setTopicCategory(e.target.value)}><option>Troca de titularidade</option><option>Transferência saldo de geração</option><option>Fatura Cemig</option><option>Primeira Ligação</option><option>CPF divergente na Cemig</option></select></label>
+              <label className="wide">Assunto<input required value={topicTitle} onChange={e => setTopicTitle(e.target.value)} placeholder="Ex.: Retorno sobre solicitação"/></label>
               <label className="wide">Descrição<input value={topicDescription} onChange={e => setTopicDescription(e.target.value)} placeholder="Detalhes do assunto"/></label>
               <label>Responsável<input value={topicResponsible} onChange={e => setTopicResponsible(e.target.value)} placeholder="Responsável"/></label>
               <label>Protocolo<input value={topicProtocol} onChange={e => setTopicProtocol(e.target.value)} placeholder="Nº do protocolo"/></label>
