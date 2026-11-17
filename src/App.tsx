@@ -109,6 +109,7 @@ export default function App() {
   const [libraryFormOpen, setLibraryFormOpen] = useState(false)
   const [expandedLibraryMessageId, setExpandedLibraryMessageId] = useState<string | null>(null)
   const [expandedLibraryDocumentId, setExpandedLibraryDocumentId] = useState<string | null>(null)
+  const [expandedMeetingId, setExpandedMeetingId] = useState<string | null>(null)
   const [historyEvents, setHistoryEvents] = useState<Array<{id:string; created_at:string; event_type:string; old_value:any; new_value:any; entity_type:'Atividade'|'Assunto'}>>([])
   const [historyFilter, setHistoryFilter] = useState<'agenda' | 'visitas'>('agenda')
   const [selectedVisitId, setSelectedVisitId] = useState('')
@@ -900,10 +901,11 @@ export default function App() {
           <section className="panel">
             <div className="panel-heading list-heading"><div><h2>Reuniões e agendamentos</h2><p>Organizados por data e horário.</p></div><span className="soft-tag">{tasks.filter(item => item.category === 'Reunião').length} REGISTRO(S)</span></div>
             {tasks.filter(item => item.category === 'Reunião').length === 0 ? <div className="empty"><CalendarClock size={28}/><strong>Nenhuma reunião cadastrada</strong><span>Adicione sua primeira reunião ou compromisso no formulário acima.</span></div> : <div className="meeting-list">{tasks.filter(item => item.category === 'Reunião').slice().sort((a,b) => a.due_date.localeCompare(b.due_date) || (a.due_time ?? '').localeCompare(b.due_time ?? '')).map(meeting => <article className="meeting-card" key={meeting.id}>
-              <div className="meeting-card-top"><div className="meeting-date"><CalendarDays size={15}/>{new Date(meeting.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}{meeting.due_time ? <><span>·</span><Clock3 size={14}/>{meeting.due_time.slice(0,5)}</> : <span>· Horário não definido</span>}</div></div>
-              <div className="meeting-card-title"><h3>{meeting.title}</h3><div className="meeting-actions"><button type="button" className="icon-button" title="Editar reunião" onClick={() => editMeeting(meeting)}><Pencil size={15}/></button><button type="button" className="icon-button danger-icon" title="Excluir reunião" onClick={() => deleteTask(meeting.id)}><Trash2 size={15}/></button></div></div>
-              {meeting.description && <div className="meeting-notes rich-notes-display" dangerouslySetInnerHTML={{__html:safeRichHtml(meeting.description)}}/>}
-              <div className="meeting-card-footer"><span className={'meeting-status meeting-status-' + meeting.status.toLowerCase().replace(/ /g,'-')}>{meeting.status}</span><select aria-label={'Status de ' + meeting.title} value={meeting.status} onChange={e => changeStatus(meeting.id,e.target.value as TaskStatus)}><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select></div>
+              <div className="meeting-card-title"><div className="meeting-item-title"><button type="button" className="library-message-toggle" aria-expanded={expandedMeetingId === meeting.id} onClick={() => setExpandedMeetingId(expandedMeetingId === meeting.id ? null : meeting.id)}>{meeting.title}<span>{expandedMeetingId === meeting.id ? 'Ocultar mensagem' : 'Ver mensagem'}</span></button></div><div className="meeting-actions"><button type="button" className="icon-button" title="Editar reunião" onClick={() => editMeeting(meeting)}><Pencil size={15}/></button><button type="button" className="icon-button danger-icon" title="Excluir reunião" onClick={() => deleteTask(meeting.id)}><Trash2 size={15}/></button></div></div>
+              {expandedMeetingId === meeting.id && <>
+                <div className="meeting-date"><CalendarDays size={15}/>{new Date(meeting.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}{meeting.due_time ? <><span>·</span><Clock3 size={14}/>{meeting.due_time.slice(0,5)}</> : <span>· Horário não definido</span>}</div>
+                {meeting.description && <div className="meeting-notes rich-notes-display" dangerouslySetInnerHTML={{__html:safeRichHtml(meeting.description)}}/>}
+              </>}
             </article>)}</div>}
           </section>
           </>}
