@@ -14,13 +14,13 @@ type TopicTransfer = { id: string; topic_id: string; from_visit_id: string; to_v
 function safeRichHtml(value: string | null | undefined) {
   let raw = String(value ?? '');
   // Recupera conteúdo que versões anteriores possam ter salvo como HTML escapado.
-  if (/&lt;\\/?(?:span|b|strong|mark|br|p|div)\\b/i.test(raw)) {
+  if (/&lt;\/?(?:span|b|strong|mark|br|p|div)\b/i.test(raw)) {
     raw = raw.replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;/gi, "'");
   }
-  if (!/<\\/?[a-z][^>]*>/i.test(raw)) {
+  if (!/<\/?[a-z][^>]*>/i.test(raw)) {
     return raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')
-      .replace(/==(.*?)==/g, '<mark>$1</mark>').replace(/\\n/g, '<br>');
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/==(.*?)==/g, '<mark>$1</mark>').replace(/\n/g, '<br>');
   }
   const doc = new DOMParser().parseFromString(raw, 'text/html');
   const clean = (node: Node): string => {
@@ -33,8 +33,8 @@ function safeRichHtml(value: string | null | undefined) {
     if (tag === 'mark') return '<mark>' + content + '</mark>';
     if (tag === 'span') {
       const style = (el.getAttribute('style') ?? '').toLowerCase();
-      if (/background(-color)?\\s*:\\s*(#fff176|yellow|rgb\\(255,\\s*241,\\s*118\\))/i.test(style)) return '<mark>' + content + '</mark>';
-      if (/font-weight\\s*:\\s*(bold|bolder|[6-9]00)/i.test(style)) return '<strong>' + content + '</strong>';
+      if (/background(-color)?\s*:\s*(#fff176|yellow|rgb\(255,\s*241,\s*118\))/i.test(style)) return '<mark>' + content + '</mark>';
+      if (/font-weight\s*:\s*(bold|bolder|[6-9]00)/i.test(style)) return '<strong>' + content + '</strong>';
       return content;
     }
     if (tag === 'br') return '<br>';
