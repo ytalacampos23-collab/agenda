@@ -85,3 +85,15 @@
 .visit-preview-topic b,.visit-preview-topic small{display:block}
 .visit-preview-topic b{font-size:11px;color:#38514d}
 .visit-preview-topic small{font-size:10px;color:#82958d;margin-top:4px}
+
+
+/* Ações e edição rápida dos assuntos dentro da ata expandida */
+.visit-preview-topic{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.topic-preview-actions{display:flex;align-items:center;gap:6px;margin-left:auto}
+.topic-preview-actions select{max-width:150px;min-width:118px;padding:6px 8px;border:1px solid var(--border,#d8dee8);border-radius:8px;background:var(--surface,#fff);font:inherit;font-size:12px}
+.topic-inline-edit{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;width:100%;padding:12px;background:var(--surface,#fff);border:1px solid var(--border,#d8dee8);border-radius:10px}
+.topic-inline-edit label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:600}
+.topic-inline-edit input,.topic-inline-edit select,.topic-inline-edit textarea{width:100%;min-width:0;padding:8px;border:1px solid var(--border,#d8dee8);border-radius:7px;font:inherit;font-size:13px}
+.topic-inline-edit label:last-of-type{grid-column:1/-1}
+.topic-inline-actions{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap}
+@media(max-width:600px){.topic-inline-edit{grid-template-columns:1fr}.topic-inline-edit label:last-of-type{grid-column:auto}.topic-preview-actions{width:100%;margin-left:0}.topic-preview-actions select{flex:1}}
