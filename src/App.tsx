@@ -383,7 +383,7 @@ export default function App() {
     setNotice(isOnline ? 'Assunto registrado e enviado para sincronização.' : 'Assunto salvo neste dispositivo. Será sincronizado quando a internet voltar.')
   }
 
-  const normalizeAuditText = (value: unknown) => String(value ?? '').trim().toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
+  const normalizeAuditText = (value: unknown) => String(value ?? '').trim().toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
   const auditCellValue = (cell: ExcelJS.Cell): unknown => {
     const value = cell.value
     if (value && typeof value === 'object' && 'result' in value) return (value as { result?: unknown }).result ?? cell.text
@@ -404,17 +404,17 @@ export default function App() {
     const raw = normalizeAuditText(value)
     if (!raw) return null
     const months: Record<string, number> = { janeiro:1, jan:1, fevereiro:2, fev:2, marco:3, mar:3, abril:4, abr:4, maio:5, mai:5, junho:6, jun:6, julho:7, jul:7, agosto:8, ago:8, setembro:9, set:9, outubro:10, out:10, novembro:11, nov:11, dezembro:12, dez:12 }
-    const yearMatch = raw.match(/(?:19|20)\\d{2}/)
+    const yearMatch = raw.match(/(?:19|20)\d{2}/)
     const year = yearMatch ? Number(yearMatch[0]) : new Date().getFullYear()
-    const numeric = raw.match(/(?:^|\\D)(0?[1-9]|1[0-2])\\s*[\\/.-]\\s*((?:19|20)\\d{2})(?:\\D|$)/) || raw.match(/^((?:19|20)\\d{2})\\s*[\\/.-]\\s*(0?[1-9]|1[0-2])$/)
+    const numeric = raw.match(/(?:^|\D)(0?[1-9]|1[0-2])\s*[\/.-]\s*((?:19|20)\d{2})(?:\D|$)/) || raw.match(/^((?:19|20)\d{2})\s*[\/.-]\s*(0?[1-9]|1[0-2])$/)
     if (numeric) {
       const month = numeric[0].startsWith(String(yearMatch?.[0] ?? '')) && numeric[0].startsWith('20') ? Number(numeric[2]) : Number(numeric[1])
       const parsedYear = Number(yearMatch?.[0] ?? (numeric[2] && numeric[2].length === 4 ? numeric[2] : numeric[1]))
       if (month >= 1 && month <= 12 && parsedYear >= 1900 && parsedYear <= 2200) return parsedYear * 12 + month - 1
     }
-    const monthName = Object.keys(months).find(name => new RegExp('(?:^|\\\\b)' + name + '(?:\\\\b|$)').test(raw))
+    const monthName = Object.keys(months).find(name => new RegExp('(?:^|\\b)' + name + '(?:\\b|$)').test(raw))
     if (monthName) return year * 12 + months[monthName] - 1
-    const fullDate = raw.match(/(?:^|\\D)\\d{1,2}\\/(\\d{1,2})\\/((?:19|20)\\d{2})(?:\\D|$)/)
+    const fullDate = raw.match(/(?:^|\D)\d{1,2}\/(\d{1,2})\/((?:19|20)\d{2})(?:\D|$)/)
     if (fullDate) {
       const month = Number(fullDate[1]), parsedYear = Number(fullDate[2])
       if (month >= 1 && month <= 12) return parsedYear * 12 + month - 1
@@ -455,7 +455,7 @@ export default function App() {
       worksheet.eachRow((row, rowNumber) => {
         if (rowNumber <= headerRow) return
         const rawInstallation = auditCellValue(row.getCell(installationCol))
-        const installation = String(rawInstallation ?? '').replace(/\\.0$/, '').replace(/[^\\dA-Za-z]/g, '')
+        const installation = String(rawInstallation ?? '').replace(/\.0$/, '').replace(/[^\dA-Za-z]/g, '')
         const month = parseAuditMonth(auditCellValue(row.getCell(referenceCol)) ?? row.getCell(referenceCol).text)
         if (!installation || month === null) return
         const rawClient = clientCol ? auditCellValue(row.getCell(clientCol)) : ''
@@ -507,7 +507,7 @@ export default function App() {
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = auditFileNameRef.current.replace(/\\.xlsx$/i, '') + '_auditada.xlsx'
+      link.download = auditFileNameRef.current.replace(/\.xlsx$/i, '') + '_auditada.xlsx'
       link.click()
       window.setTimeout(() => URL.revokeObjectURL(url), 1000)
       setNotice('Planilha auditada preparada para download.')
