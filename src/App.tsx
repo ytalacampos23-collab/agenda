@@ -31,7 +31,8 @@ const categories = [
 const today = () => { const d = new Date(); return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-') }
 
 export default function App() {
-  const [section, setSection] = useState<'agenda' | 'visitas' | 'biblioteca' | 'ouvidoria' | 'historico'>('agenda')
+  const [section, setSection] = useState<'agenda' | 'visitas' | 'ouvidoria' | 'historico'>('agenda')
+  const [visitPageTab, setVisitPageTab] = useState<'visits' | 'library'>('visits')
   const [sessionReady, setSessionReady] = useState(false)
   const [authVerified, setAuthVerified] = useState(false)
   const [userEmail, setUserEmail] = useState('')
@@ -730,7 +731,6 @@ export default function App() {
   const nav = [
     { id: 'agenda' as const, label: 'Minha Agenda', icon: CalendarDays },
     { id: 'visitas' as const, label: 'Visita à Cemig', icon: ClipboardList },
-    { id: 'biblioteca' as const, label: 'Biblioteca', icon: BookOpen },
     { id: 'ouvidoria' as const, label: 'Auditoria', icon: ClipboardList },
     { id: 'historico' as const, label: 'Histórico', icon: History },
   ]
@@ -758,7 +758,7 @@ export default function App() {
     <main className="main">
       <header className="topbar"><button className="menu-button" onClick={() => setMobileOpen(true)}><Menu/></button><div className="breadcrumb">Watt-Wise <span>/</span> {nav.find(n => n.id === section)?.label}</div><div className={'sync-indicator ' + (!isOnline ? 'offline' : syncing ? 'syncing' : syncFailed ? 'pending' : pendingCount ? 'pending' : 'online')}><span className="sync-dot"/>{!isOnline ? 'Off-line' : syncing ? 'Sincronizando...' : syncFailed ? 'Falha na sincronização' : pendingCount ? pendingCount + ' pendente(s)' : 'Sincronizado'}</div><button className="profile" onClick={signOut} title="Sair da conta"><LogOut size={14}/> Sair <ChevronDown size={14}/></button></header>
       <div className="content">
-        <div className="welcome"><div><div className="eyebrow">PAINEL DE CONTROLE</div><h1>{section === 'agenda' ? 'Minha Agenda' : section === 'visitas' ? 'Visita à Cemig' : section === 'biblioteca' ? 'Biblioteca' : section === 'ouvidoria' ? 'Auditoria' : 'Histórico'}</h1><p>{section === 'agenda' ? 'Organize suas atividades e acompanhe suas prioridades.' : section === 'visitas' ? 'Registre atas, encaminhamentos e pendências das visitas.' : section === 'ouvidoria' ? 'Área reservada para desenvolvimento dos registros e acompanhamentos da Auditoria.' : 'Acompanhe as movimentações registradas no sistema.'}</p></div><label className="date-chip"><CalendarDays size={16}/><span>Data</span><input aria-label="Selecionar data" type="date" value={selectedDashboardDate} onChange={e => setSelectedDashboardDate(e.target.value)}/></label></div>
+        <div className="welcome"><div><div className="eyebrow">PAINEL DE CONTROLE</div><h1>{section === 'agenda' ? 'Minha Agenda' : section === 'visitas' ? 'Visita à Cemig' : section === 'ouvidoria' ? 'Auditoria' : 'Histórico'}</h1><p>{section === 'agenda' ? 'Organize suas atividades e acompanhe suas prioridades.' : section === 'visitas' ? 'Registre atas, encaminhamentos e pendências das visitas.' : section === 'ouvidoria' ? 'Área reservada para desenvolvimento dos registros e acompanhamentos da Auditoria.' : 'Acompanhe as movimentações registradas no sistema.'}</p></div><label className="date-chip"><CalendarDays size={16}/><span>Data</span><input aria-label="Selecionar data" type="date" value={selectedDashboardDate} onChange={e => setSelectedDashboardDate(e.target.value)}/></label></div>
 
         {error && <div className="error-message">{error}<button onClick={() => setError('')}>Fechar</button></div>}
         {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')}>Fechar</button></div>}
@@ -797,6 +797,11 @@ export default function App() {
           </section>
         </>}
         {section === 'visitas' && <>
+          <div className="visit-page-tabs" role="tablist" aria-label="Seções da Visita à Cemig">
+            <button type="button" role="tab" aria-selected={visitPageTab === 'visits'} className={visitPageTab === 'visits' ? 'active' : ''} onClick={() => setVisitPageTab('visits')}><ClipboardList size={16}/> Visitas</button>
+            <button type="button" role="tab" aria-selected={visitPageTab === 'library'} className={visitPageTab === 'library' ? 'active' : ''} onClick={() => {setVisitPageTab('library');resetLibraryForm()}}><BookOpen size={16}/> Biblioteca</button>
+          </div>
+          {visitPageTab === 'visits' && <>
           <div className="stats">
             <button type="button" className={'stat-card stat-card-button ' + (dashboardVisitFilter === 'visits' ? 'active' : '')} aria-pressed={dashboardVisitFilter === 'visits'} onClick={() => { setDashboardVisitFilter('visits'); setGlobalTopicStatusFilter('Todos') }}><span>Visitas registradas</span><strong>{visits.length}</strong><ClipboardList/></button>
             <button type="button" className={'stat-card stat-card-button ' + (dashboardVisitFilter === 'Pendente' ? 'active' : '')} aria-pressed={dashboardVisitFilter === 'Pendente'} onClick={() => { setDashboardVisitFilter('Pendente'); setGlobalTopicStatusFilter('Pendente') }}><span>Assuntos pendentes</span><strong>{visitTopics.filter(t => t.status === 'Pendente').length}</strong><AlertCircle/></button>
@@ -841,8 +846,9 @@ export default function App() {
             {visitTopics.filter(t => t.visit_id !== selectedVisitId && t.status !== "Resolvido" && t.status !== "Não se aplica" && !visitTopics.some(copy => copy.visit_id === selectedVisitId && copy.origin_topic_id === t.id)).length > 0 && <div className="carry-panel"><div><strong>Pendências de outras atas</strong><p>Escolha individualmente quais assuntos devem continuar nesta ata.</p></div>{visitTopics.filter(t => t.visit_id !== selectedVisitId && t.status !== "Resolvido" && t.status !== "Não se aplica" && !visitTopics.some(copy => copy.visit_id === selectedVisitId && copy.origin_topic_id === t.id)).map(topic => <div className="carry-row" key={topic.id}><span><strong>{topic.title}</strong><small>{visits.find(v => v.id === topic.visit_id)?.title ?? "Ata anterior"} · {topic.status}</small></span><button type="button" className="secondary-button" onClick={() => carryTopicForward(topic)}>Incluir nesta ata</button></div>)}</div>}
 
           </section>}
+          </>}
         </>}
-          {section === 'visitas' && <section className="panel global-topic-search">
+          {section === 'visitas' && visitPageTab === 'visits' && <section className="panel global-topic-search">
             <div className="panel-heading"><div><h2>Filtro geral de assuntos</h2><p>Pesquise assuntos de todas as atas cadastradas, sem precisar abrir cada uma.</p></div><span className="soft-tag">{visitTopics.filter(t => (globalTopicStatusFilter === 'Todos' || t.status === globalTopicStatusFilter) && (globalTopicCategoryFilter === 'Todas' || (t.category ?? 'Não categorizado') === globalTopicCategoryFilter)).length} ASSUNTO(S)</span></div>
             <div className="topic-filters">
               <label>Status<select value={globalTopicStatusFilter} onChange={e => setGlobalTopicStatusFilter(e.target.value)}><option>Todos</option><option>Pendente</option><option>Em análise</option><option>Resolvido</option><option>Não se aplica</option></select></label>
@@ -851,7 +857,7 @@ export default function App() {
             </div>
             {visitTopics.filter(t => (globalTopicStatusFilter === 'Todos' || t.status === globalTopicStatusFilter) && (globalTopicCategoryFilter === 'Todas' || (t.category ?? 'Não categorizado') === globalTopicCategoryFilter)).length === 0 ? <div className="empty"><strong>Nenhum assunto encontrado</strong><span>Não há assuntos que correspondam aos filtros selecionados.</span></div> : <div className="global-topic-results">{visitTopics.filter(t => (globalTopicStatusFilter === 'Todos' || t.status === globalTopicStatusFilter) && (globalTopicCategoryFilter === 'Todas' || (t.category ?? 'Não categorizado') === globalTopicCategoryFilter)).map(topic => <div className="global-topic-row" key={topic.id}><span><strong>{topic.title}</strong><small>{topic.category ?? 'Não categorizado'} · {topic.status} · {visits.find(v => v.id === topic.visit_id)?.title ?? 'Ata não encontrada'} · {visits.find(v => v.id === topic.visit_id)?.visit_date ? new Date(visits.find(v => v.id === topic.visit_id)!.visit_date + 'T12:00:00').toLocaleDateString('pt-BR') : 'Sem data'}</small></span><button type="button" className="secondary-button" onClick={() => setSelectedVisitId(topic.visit_id)}>Abrir ata</button></div>)}</div>}
           </section>}
-          {section === 'biblioteca' && <section className="panel library-panel">
+          {visitPageTab === 'library' && <section className="panel library-panel">
             <div className="panel-heading"><div><h2>Biblioteca da Cemig</h2><p>Organize mensagens para clientes e documentos necessários por tipo de solicitação.</p></div><span className="soft-tag">{libraryItems.length} ITEM(NS)</span></div>
             <div className="library-tabs"><button type="button" className={libraryKind === 'message' ? 'active' : ''} onClick={() => {setLibraryKind('message');resetLibraryForm()}}>Mensagens prontas</button><button type="button" className={libraryKind === 'documents' ? 'active' : ''} onClick={() => {setLibraryKind('documents');resetLibraryForm()}}>Documentos necessários</button></div>
             <form className="library-editor" onSubmit={saveLibraryItem}>
