@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarDays, ClipboardList, History, Plus, Search, FileDown, FileSpreadsheet, Upload, ShieldCheck, Menu, X, CheckCircle2, Clock3, AlertCircle, ChevronDown, ChevronLeft, ChevronRight, LogOut, LoaderCircle, Trash2, Pencil, BookOpen, Copy, Save } from 'lucide-react'
+import { CalendarDays, CalendarClock, ClipboardList, History, Plus, Search, FileDown, FileSpreadsheet, Upload, ShieldCheck, Menu, X, CheckCircle2, Clock3, AlertCircle, ChevronDown, ChevronLeft, ChevronRight, LogOut, LoaderCircle, Trash2, Pencil, BookOpen, Copy, Save } from 'lucide-react'
 import ExcelJS from 'exceljs'
 import { hasSupabaseConfig, supabase } from './lib/supabase'
 
@@ -72,7 +72,7 @@ const categories = [
 const today = () => { const d = new Date(); return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-') }
 
 export default function App() {
-  const [section, setSection] = useState<'agenda' | 'visitas' | 'ouvidoria' | 'historico'>('agenda')
+  const [section, setSection] = useState<'agenda' | 'reunioes' | 'visitas' | 'ouvidoria' | 'historico'>('agenda')
   const [visitPageTab, setVisitPageTab] = useState<'visits' | 'library'>('visits')
   const [sessionReady, setSessionReady] = useState(false)
   const [authVerified, setAuthVerified] = useState(false)
@@ -89,6 +89,13 @@ export default function App() {
   const [authBusy, setAuthBusy] = useState(false)
   const [tasks, setTasks] = useState<Task[]>([])
   const [showAddTaskForm, setShowAddTaskForm] = useState(false)
+  const [meetingFormOpen, setMeetingFormOpen] = useState(false)
+  const [meetingTitle, setMeetingTitle] = useState('')
+  const [meetingDate, setMeetingDate] = useState(today())
+  const [meetingTime, setMeetingTime] = useState('')
+  const [meetingPriority, setMeetingPriority] = useState<Priority>('Média')
+  const [meetingNotes, setMeetingNotes] = useState('')
+  const [editingMeetingId, setEditingMeetingId] = useState<string | null>(null)
   const [visits, setVisits] = useState<Visit[]>([])
   const [visitTopics, setVisitTopics] = useState<VisitTopic[]>([])
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([])
@@ -120,6 +127,7 @@ export default function App() {
   const [globalTopicFilterOpen, setGlobalTopicFilterOpen] = useState(false)
   const [calendarOpen, setCalendarOpen] = useState(false)
   const visitNotesRef = useRef<HTMLDivElement>(null)
+  const meetingNotesRef = useRef<HTMLDivElement>(null)
   const topicObservationsRef = useRef<HTMLDivElement>(null)
   const editTopicObservationsRef = useRef<HTMLDivElement>(null)
   const editVisitNotesRef = useRef<HTMLDivElement>(null)
@@ -436,6 +444,34 @@ export default function App() {
     setNotice(isOnline ? 'Atividade salva neste dispositivo e enviada para sincronização.' : 'Atividade salva neste dispositivo. Será sincronizada quando a internet voltar.')
   }
 
+  function saveMeeting(event: FormEvent) {
+    event.preventDefault()
+    if (!userId || !meetingTitle.trim()) return
+    const existing = editingMeetingId ? tasks.find(item => item.id === editingMeetingId) : null
+    const meeting: Task = {
+      id: editingMeetingId ?? crypto.randomUUID(),
+      title: meetingTitle.trim(),
+      description: meetingNotes.trim() || null,
+      category: 'Reunião',
+      due_date: meetingDate,
+      due_time: meetingTime || null,
+      status: existing?.status ?? 'A fazer',
+      priority: meetingPriority,
+      assigned_to: null,
+      show_on_calendar: true,
+      deleted_at: null
+    }
+    const next = [...tasks.filter(item => item.id !== meeting.id), meeting].sort((a,b) => a.due_date.localeCompare(b.due_date) || (a.due_time ?? '').localeCompare(b.due_time ?? ''))
+    setTasks(next); saveTaskCache(userId, next); queueChange(meeting)
+    setMeetingTitle(''); setMeetingDate(today()); setMeetingTime(''); setMeetingPriority('Média'); setMeetingNotes(''); setEditingMeetingId(null); setMeetingFormOpen(false)
+    setNotice(isOnline ? (existing ? 'Reunião atualizada e enviada para sincronização.' : 'Reunião cadastrada e enviada para sincronização.') : 'Reunião salva neste dispositivo. Será sincronizada quando a internet voltar.')
+  }
+
+  function editMeeting(meeting: Task) {
+    setEditingMeetingId(meeting.id); setMeetingTitle(meeting.title); setMeetingDate(meeting.due_date); setMeetingTime(meeting.due_time ?? ''); setMeetingPriority(meeting.priority); setMeetingNotes(meeting.description ?? ''); setMeetingFormOpen(true)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   async function changeStatus(id: string, status: TaskStatus) {
     const task = tasks.find(t => t.id === id)
     if (!task) return
@@ -740,7 +776,7 @@ export default function App() {
     setNotice('Você saiu da sua conta. Os dados e arquivos temporários locais do Watt-Wise foram apagados.')
   }
 
-  const visibleTasks = useMemo(() => tasks.filter(t =>
+  const visibleTasks = useMemo(() => tasks.filter(t => t.category !== 'Reunião' &&
     (statusFilter === 'Todos' || t.status === statusFilter) &&
     (categoryFilter === 'Todas' || t.category === categoryFilter) &&
     (priorityFilter === 'Todas' || t.priority === priorityFilter) &&
@@ -775,6 +811,7 @@ export default function App() {
 
   const nav = [
     { id: 'agenda' as const, label: 'Minha Agenda', icon: CalendarDays },
+    { id: 'reunioes' as const, label: 'Reuniões', icon: CalendarClock },
     { id: 'visitas' as const, label: 'Visita à Cemig', icon: ClipboardList },
     { id: 'ouvidoria' as const, label: 'Auditoria', icon: ClipboardList },
     { id: 'historico' as const, label: 'Histórico', icon: History },
@@ -803,7 +840,7 @@ export default function App() {
     <main className="main">
       <header className="topbar"><button className="menu-button" onClick={() => setMobileOpen(true)}><Menu/></button><div className="breadcrumb">Watt-Wise <span>/</span> {nav.find(n => n.id === section)?.label}</div><div className={'sync-indicator ' + (!isOnline ? 'offline' : syncing ? 'syncing' : syncFailed ? 'pending' : pendingCount ? 'pending' : 'online')}><span className="sync-dot"/>{!isOnline ? 'Off-line' : syncing ? 'Sincronizando...' : syncFailed ? 'Falha na sincronização' : pendingCount ? pendingCount + ' pendente(s)' : 'Sincronizado'}</div><button className="profile" onClick={signOut} title="Sair da conta"><LogOut size={14}/> Sair <ChevronDown size={14}/></button></header>
       <div className="content">
-        <div className="welcome"><div><div className="eyebrow">PAINEL DE CONTROLE</div><h1>{section === 'agenda' ? 'Minha Agenda' : section === 'visitas' ? 'Visita à Cemig' : section === 'ouvidoria' ? 'Auditoria' : 'Histórico'}</h1><p>{section === 'agenda' ? 'Organize suas atividades e acompanhe suas prioridades.' : section === 'visitas' ? 'Registre atas, encaminhamentos e pendências das visitas.' : section === 'ouvidoria' ? 'Área reservada para desenvolvimento dos registros e acompanhamentos da Auditoria.' : 'Acompanhe as movimentações registradas no sistema.'}</p></div><label className="date-chip"><CalendarDays size={16}/><span>Data</span><input aria-label="Selecionar data" type="date" value={selectedDashboardDate} onChange={e => setSelectedDashboardDate(e.target.value)}/></label></div>
+        <div className="welcome"><div><div className="eyebrow">PAINEL DE CONTROLE</div><h1>{section === 'agenda' ? 'Minha Agenda' : section === 'reunioes' ? 'Reuniões' : section === 'visitas' ? 'Visita à Cemig' : section === 'ouvidoria' ? 'Auditoria' : 'Histórico'}</h1><p>{section === 'agenda' ? 'Organize suas atividades e acompanhe suas prioridades.' : section === 'reunioes' ? 'Organize reuniões e agendamentos por data, horário e prioridade.' : section === 'visitas' ? 'Registre atas, encaminhamentos e pendências das visitas.' : section === 'ouvidoria' ? 'Área reservada para desenvolvimento dos registros e acompanhamentos da Auditoria.' : 'Acompanhe as movimentações registradas no sistema.'}</p></div><label className="date-chip"><CalendarDays size={16}/><span>Data</span><input aria-label="Selecionar data" type="date" value={selectedDashboardDate} onChange={e => setSelectedDashboardDate(e.target.value)}/></label></div>
 
         {error && <div className="error-message">{error}<button onClick={() => setError('')}>Fechar</button></div>}
         {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')}>Fechar</button></div>}
@@ -839,6 +876,31 @@ export default function App() {
             <div className="panel-heading"><button type="button" className="collapsible-panel-heading" aria-expanded={calendarOpen} onClick={() => setCalendarOpen(open => !open)}><span><h2>Calendário</h2><p>Somente atividades marcadas para aparecer no calendário.</p></span><span className="collapse-heading-action">{calendarOpen ? 'Recolher' : 'Expandir'} <ChevronDown className={calendarOpen ? 'chevron-open' : ''} size={17}/></span></button></div>{calendarOpen && <>
             <div className="calendar-toolbar"><div className="calendar-modes"><button type="button" className={calendarView === 'month' ? 'active' : ''} onClick={() => setCalendarView('month')}>Mês</button><button type="button" className={calendarView === 'week' ? 'active' : ''} onClick={() => setCalendarView('week')}>Semana</button><button type="button" className={calendarView === 'day' ? 'active' : ''} onClick={() => setCalendarView('day')}>Dia</button></div><div className="calendar-navigation"><button type="button" onClick={() => moveCalendar(-1)} aria-label="Período anterior"><ChevronLeft size={16}/></button><strong>{calendarHeading}</strong><button type="button" onClick={() => moveCalendar(1)} aria-label="Próximo período"><ChevronRight size={16}/></button><button type="button" onClick={() => setCalendarDate(today())}>Hoje</button></div></div>
             <div className={'calendar-grid ' + calendarView}>{calendarView !== 'day' && ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(day => <div className="calendar-weekday" key={day}>{day}</div>)}{calendarDays.map(day => <div key={day} className={'calendar-cell ' + (day.slice(0,7) !== calendarDate.slice(0,7) && calendarView === 'month' ? 'outside-month' : '') + (day === today() ? ' is-today' : '')}><button type="button" className="calendar-day" onClick={() => {setCalendarDate(day);setCalendarView('day')}}>{new Date(day + 'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit', ...(calendarView === 'day' ? {month:'long'} : {})})}</button>{tasks.filter(task => task.due_date === day && task.show_on_calendar !== false).map(task => <button type="button" key={task.id} className={'calendar-event ' + (task.status === 'Concluído' ? 'done' : task.priority === 'Urgente' ? 'urgent' : '')} onClick={() => { clearTaskFilters(); setEditingTask({...task}) }} title={task.title}>{task.due_time ? task.due_time.slice(0,5) + ' · ' : ''}{task.title}</button>)}</div>)}</div></>}
+          </section>
+        </>}
+        {section === 'reunioes' && <>
+          <section className="panel meetings-panel">
+            <button type="button" className="panel-heading collapsible-panel-heading" aria-expanded={meetingFormOpen} onClick={() => setMeetingFormOpen(open => !open)}>
+              <div><h2>{editingMeetingId ? 'Editar reunião / agendamento' : 'Cadastrar reunião / agendamento'}</h2><p>Registre data, horário, prioridade e observações importantes.</p></div>
+              <span className="collapse-heading-action">{meetingFormOpen ? 'Recolher' : 'Adicionar'} <ChevronDown className={meetingFormOpen ? 'chevron-open' : ''} size={18}/></span>
+            </button>
+            {meetingFormOpen && <form className="form-grid meeting-form" onSubmit={saveMeeting}>
+              <label className="wide">Título<input required value={meetingTitle} onChange={e => setMeetingTitle(e.target.value)} placeholder="Ex.: Reunião de alinhamento com a equipe"/></label>
+              <label>Data<input type="date" required value={meetingDate} onChange={e => setMeetingDate(e.target.value)}/></label>
+              <label>Horário<input type="time" value={meetingTime} onChange={e => setMeetingTime(e.target.value)}/></label>
+              <label>Prioridade<select value={meetingPriority} onChange={e => setMeetingPriority(e.target.value as Priority)}><option>Baixa</option><option>Média</option><option>Alta</option><option>Urgente</option></select></label>
+              <label className="wide notes-field">Observações<div className="notes-toolbar"><button type="button" className="format-button" onMouseDown={e => e.preventDefault()} onClick={() => applyBoldToNotes(meetingNotesRef, meetingNotes, setMeetingNotes)}><strong>B</strong> Negrito</button><button type="button" className="format-button highlight-format" onMouseDown={e => e.preventDefault()} onClick={() => applyHighlightToNotes(meetingNotesRef, meetingNotes, setMeetingNotes)}>Marca-texto</button><small>Selecione um trecho e clique para destacar.</small></div><RichNotesEditor editorRef={meetingNotesRef} value={meetingNotes} onChange={setMeetingNotes} placeholder="Anote pautas, decisões, participantes e informações importantes..."/></label>
+              <div className="wide form-action"><button className="primary-button" type="submit"><Plus size={17}/>{editingMeetingId ? 'Salvar alterações' : 'Salvar reunião'}</button>{editingMeetingId && <button type="button" className="secondary-button" onClick={() => {setEditingMeetingId(null);setMeetingTitle('');setMeetingDate(today());setMeetingTime('');setMeetingPriority('Média');setMeetingNotes('');setMeetingFormOpen(false)}}>Cancelar edição</button>}</div>
+            </form>}
+          </section>
+          <section className="panel">
+            <div className="panel-heading list-heading"><div><h2>Reuniões e agendamentos</h2><p>Organizados por data e horário, com prioridade em destaque.</p></div><span className="soft-tag">{tasks.filter(item => item.category === 'Reunião').length} REGISTRO(S)</span></div>
+            {tasks.filter(item => item.category === 'Reunião').length === 0 ? <div className="empty"><CalendarClock size={28}/><strong>Nenhuma reunião cadastrada</strong><span>Adicione sua primeira reunião ou compromisso no formulário acima.</span></div> : <div className="meeting-list">{tasks.filter(item => item.category === 'Reunião').slice().sort((a,b) => a.due_date.localeCompare(b.due_date) || (a.due_time ?? '').localeCompare(b.due_time ?? '')).map(meeting => <article className="meeting-card" key={meeting.id}>
+              <div className="meeting-card-top"><div className="meeting-date"><CalendarDays size={15}/>{new Date(meeting.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}{meeting.due_time ? <><span>·</span><Clock3 size={14}/>{meeting.due_time.slice(0,5)}</> : <span>· Horário não definido</span>}</div><span className={'priority-badge priority-' + meeting.priority.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')}>{meeting.priority}</span></div>
+              <div className="meeting-card-title"><h3>{meeting.title}</h3><div className="meeting-actions"><button type="button" className="icon-button" title="Editar reunião" onClick={() => editMeeting(meeting)}><Pencil size={15}/></button><button type="button" className="icon-button danger-icon" title="Excluir reunião" onClick={() => deleteTask(meeting.id)}><Trash2 size={15}/></button></div></div>
+              {meeting.description && <div className="meeting-notes rich-notes-display" dangerouslySetInnerHTML={{__html:safeRichHtml(meeting.description)}}/>}
+              <div className="meeting-card-footer"><span className={'meeting-status meeting-status-' + meeting.status.toLowerCase().replace(/ /g,'-')}>{meeting.status}</span><select aria-label={'Status de ' + meeting.title} value={meeting.status} onChange={e => changeStatus(meeting.id,e.target.value as TaskStatus)}><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select></div>
+            </article>)}</div>}
           </section>
         </>}
         {section === 'visitas' && <>
