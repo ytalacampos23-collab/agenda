@@ -119,3 +119,5 @@
 .global-topic-row strong{font-size:13px;color:#344e48}
 .global-topic-row small{font-size:11px;color:#788b84;line-height:1.45}
 @media(max-width:520px){.global-topic-row{align-items:flex-start;flex-direction:column}.global-topic-row .secondary-button{width:100%}}
+
+@media(max-width:800px){.date-chip{font-size:11px;flex-shrink:0}.date-chip span{font-size:11px}.date-chip input{font-size:11px;min-width:118px;width:118px}}
