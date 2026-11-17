@@ -414,11 +414,6 @@ export default function App() {
     }
     const monthName = Object.keys(months).find(name => new RegExp('(?:^|\\b)' + name + '(?:\\b|$)').test(raw))
     if (monthName) return year * 12 + months[monthName] - 1
-    const fullDate = raw.match(/(?:^|\D)\d{1,2}\/(\d{1,2})\/((?:19|20)\d{2})(?:\D|$)/)
-    if (fullDate) {
-      const month = Number(fullDate[1]), parsedYear = Number(fullDate[2])
-      if (month >= 1 && month <= 12) return parsedYear * 12 + month - 1
-    }
     return null
   }
   const auditMonthLabel = (monthIndex: number) => new Date(Math.floor(monthIndex / 12), monthIndex % 12, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
