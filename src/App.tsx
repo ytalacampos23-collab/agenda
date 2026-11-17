@@ -32,6 +32,7 @@ const today = () => { const d = new Date(); return [d.getFullYear(), String(d.ge
 export default function App() {
   const [section, setSection] = useState<'agenda' | 'visitas' | 'ouvidoria' | 'historico'>('agenda')
   const [sessionReady, setSessionReady] = useState(false)
+  const [authVerified, setAuthVerified] = useState(false)
   const [userEmail, setUserEmail] = useState('')
   const [userId, setUserId] = useState('')
   const [isOnline, setIsOnline] = useState(navigator.onLine)
@@ -113,19 +114,31 @@ export default function App() {
 
   useEffect(() => {
     if (!supabase) { setSessionReady(true); return }
-    supabase.auth.getSession().then(({ data, error }) => {
-      if (error) setError(error.message)
-      const sessionUser = data.session?.user
-      if (sessionUser) { setUserEmail(sessionUser.email ?? ''); setUserId(sessionUser.id); localStorage.setItem('wattwise:offline-user', JSON.stringify({ id: sessionUser.id, email: sessionUser.email ?? '' })) }
-      else if (!navigator.onLine) { const cached = readJson<{id:string;email:string}|null>('wattwise:offline-user', null); if (cached) { setUserEmail(cached.email); setUserId(cached.id) } }
-      setSessionReady(true)
+    let active = true
+    const verifySession = async () => {
+      try {
+        if (!navigator.onLine) { if (active) { setAuthVerified(false); setUserEmail(''); setUserId('') }; return }
+        const { data: sessionData, error: sessionError } = await supabase!.auth.getSession()
+        if (sessionError) throw sessionError
+        if (!sessionData.session) { if (active) { setAuthVerified(false); setUserEmail(''); setUserId('') }; return }
+        const { data: userData, error: userError } = await supabase!.auth.getUser()
+        if (userError) throw userError
+        if (active && userData.user && userData.user.id === sessionData.session.user.id) {
+          setUserEmail(userData.user.email ?? '')
+          setUserId(userData.user.id)
+          setAuthVerified(true)
+        } else if (active) { setAuthVerified(false); setUserEmail(''); setUserId('') }
+      } catch {
+        if (active) { setAuthVerified(false); setUserEmail(''); setUserId(''); setError('Não foi possível validar sua sessão. Conecte-se à internet e entre novamente.') }
+      } finally { if (active) setSessionReady(true) }
+    }
+    void verifySession()
+    const { data: listener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        setAuthVerified(false); setUserEmail(''); setUserId('')
+      }
     })
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUserEmail(session?.user.email ?? '')
-      setUserId(session?.user.id ?? '')
-      if (session?.user) localStorage.setItem('wattwise:offline-user', JSON.stringify({ id: session.user.id, email: session.user.email ?? '' }))
-    })
-    return () => listener.subscription.unsubscribe()
+    return () => { active = false; listener.subscription.unsubscribe() }
   }, [])
 
   useEffect(() => {
@@ -136,15 +149,13 @@ export default function App() {
 
   useEffect(() => {
     if (!userId) return
-    const cached = readJson<Task[]>(cacheKey(userId), [])
-    const cachedVisits = readJson<Visit[]>(visitCacheKey(userId), [])
-    const cachedTopics = readJson<VisitTopic[]>(topicCacheKey(userId), [])
-    setTasks(cached.filter(t => !t.deleted_at))
-    setVisits(cachedVisits)
-    setVisitTopics(cachedTopics)
-    setSelectedVisitId(current => current || cachedVisits[0]?.id || '')
+    if (!authVerified || !isOnline || !supabase) return
+    setTasks([])
+    setVisits([])
+    setVisitTopics([])
+    setHistoryEvents([])
+    setSelectedVisitId('')
     setPendingCount(readJson<PendingChange[]>(queueKey(userId), []).length + readJson<PendingVisitChange[]>(visitQueueKey(userId), []).length)
-    if (!isOnline || !supabase) return
     let cancelled = false
     const sync = async () => {
       setSyncing(true)
@@ -201,7 +212,7 @@ export default function App() {
     }
     void sync()
     return () => { cancelled = true }
-  }, [userId, isOnline, syncVersion])
+  }, [userId, isOnline, syncVersion, authVerified])
 
   const saveVisitsCache = (id: string, rows: Visit[]) => localStorage.setItem(visitCacheKey(id), JSON.stringify(rows))
   const saveTopicsCache = (id: string, rows: VisitTopic[]) => localStorage.setItem(topicCacheKey(id), JSON.stringify(rows))
@@ -299,15 +310,21 @@ export default function App() {
     if (!supabase) return
     setAuthBusy(true); setError(''); setNotice('')
     try {
+      if (!navigator.onLine) throw new Error('É necessário estar conectado à internet para entrar no Watt-Wise.')
       if (authMode === 'signup') {
         const { data, error } = await supabase.auth.signUp({ email: email.trim(), password })
         if (error) throw error
         if (data.session) setNotice('Conta criada! Você já está conectado.')
-        else setNotice('Cadastro iniciado. Confira seu e-mail para confirmar a conta e depois entre.')
+        else { setNotice('Cadastro iniciado. Confira seu e-mail para confirmar a conta e depois entre.'); return }
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
         if (error) throw error
       }
+      const { data: verified, error: verifyError } = await supabase.auth.getUser()
+      if (verifyError || !verified.user) throw verifyError ?? new Error('Não foi possível validar sua conta.')
+      setUserEmail(verified.user.email ?? '')
+      setUserId(verified.user.id)
+      setAuthVerified(true)
     } catch (e) { setError(e instanceof Error ? e.message : 'Não foi possível concluir o acesso.') }
     finally { setAuthBusy(false) }
   }
@@ -615,14 +632,17 @@ export default function App() {
   }
 
   async function signOut() {
+    const unsynced = pendingCount
+    if (unsynced > 0 && !window.confirm('Existem ' + unsynced + ' alteração(ões) ainda não sincronizada(s). Ao sair, os dados locais e essas alterações pendentes serão apagados e não poderão ser recuperados. Deseja continuar?')) return
     if (supabase) {
-      const { error } = await supabase.auth.signOut()
+      const { error } = await supabase.auth.signOut({ scope: 'local' })
       if (error) { setError('Não foi possível sair da conta: ' + error.message); return }
     }
-    localStorage.removeItem('wattwise:offline-user')
+    Object.keys(localStorage).filter(key => key.startsWith('wattwise:')).forEach(key => localStorage.removeItem(key))
+    setAuthVerified(false)
     setUserEmail(''); setUserId(''); setTasks([]); setVisits([]); setVisitTopics([])
     setHistoryEvents([]); setSelectedVisitId(''); setPendingCount(0)
-    setNotice('Você saiu da sua conta. O acesso off-line desta sessão foi encerrado.')
+    setNotice('Você saiu da sua conta. Os dados e arquivos temporários locais do Watt-Wise foram apagados.')
   }
 
   const visibleTasks = useMemo(() => tasks.filter(t =>
@@ -667,7 +687,8 @@ export default function App() {
 
   if (!sessionReady) return <div className="auth-screen"><div className="auth-card"><LoaderCircle className="spin"/><p>Conectando ao Watt-Wise...</p></div></div>
   if (!hasSupabaseConfig || !supabase) return <div className="auth-screen"><div className="auth-card"><div className="brand-mark auth-mark">W</div><h1>Watt-Wise</h1><p>Falta configurar a conexão com o Supabase para liberar o acesso.</p><div className="setup-note"><ShieldCheck size={18}/><span>O endereço do projeto e a chave pública precisam estar nas variáveis de ambiente da hospedagem.</span></div></div></div>
-  if (!userEmail) return <div className="auth-screen"><form className="auth-card" onSubmit={handleAuth}><div className="brand-mark auth-mark">W</div><div className="eyebrow">ORGANIZAÇÃO & ACOMPANHAMENTO</div><h1>Watt-Wise</h1><p>{authMode === 'login' ? 'Entre para acessar sua agenda.' : 'Crie sua conta para começar a usar sua agenda.'}</p>{!isOnline && <div className="notice">Você está sem internet. Para entrar off-line, é necessário já ter acessado esta conta neste dispositivo.</div>}
+  if (!isOnline) return <div className="auth-screen"><div className="auth-card"><div className="brand-mark auth-mark">W</div><h1>Watt-Wise</h1><p>Por segurança, o acesso exige uma conexão ativa com a internet para validar sua sessão.</p><div className="setup-note"><ShieldCheck size={18}/><span>Conecte-se à internet e atualize a página para entrar. Seus dados não ficam disponíveis off-line.</span></div></div></div>
+  if (!authVerified || !userEmail) return <div className="auth-screen"><form className="auth-card" onSubmit={handleAuth}><div className="brand-mark auth-mark">W</div><div className="eyebrow">ORGANIZAÇÃO & ACOMPANHAMENTO</div><h1>Watt-Wise</h1><p>{authMode === 'login' ? 'Entre para acessar sua agenda.' : 'Crie sua conta para começar a usar sua agenda.'}</p>{!isOnline && <div className="notice">Você está sem internet. Para entrar off-line, é necessário já ter acessado esta conta neste dispositivo.</div>}
     {error && <div className="error-message">{error}</div>}{notice && <div className="notice">{notice}</div>}
     <label>E-mail<input type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com"/></label>
     <label>Senha<input type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} minLength={6} required value={password} onChange={e => setPassword(e.target.value)} placeholder="Mínimo de 6 caracteres"/></label>
