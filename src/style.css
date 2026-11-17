@@ -209,3 +209,50 @@
 .visit-page-tabs button{display:inline-flex;align-items:center;gap:8px;border:0;border-radius:8px;padding:10px 16px;background:transparent;color:var(--muted,#667085);font:inherit;font-weight:600;cursor:pointer}
 .visit-page-tabs button.active{background:var(--surface,#fff);color:var(--text,#202939);box-shadow:0 1px 3px rgba(16,24,40,.12)}
 @media(max-width:560px){.visit-page-tabs{width:100%}.visit-page-tabs button{flex:1;justify-content:center;padding:10px 8px}}
+
+
+/* Biblioteca Cemig - organização visual */
+.library-panel{padding:clamp(16px,2.5vw,28px)}
+.library-hero{display:flex;align-items:center;gap:15px;padding:5px 0 22px;border-bottom:1px solid #e8eeeb}
+.library-hero-icon{width:48px;height:48px;flex:0 0 48px;border-radius:14px;background:#eaf3ef;color:#245d50;display:grid;place-items:center}
+.library-hero-copy{min-width:0;flex:1}
+.library-hero-copy>span,.library-editor-title>div>span,.library-item-title>span{display:block;color:#789087;font-size:9px;font-weight:800;letter-spacing:1.1px}
+.library-hero-copy h2{margin:4px 0;color:#294b40;font-size:21px}
+.library-hero-copy p{margin:0;color:#75877f;font-size:12px;line-height:1.5}
+.library-total{padding:9px 14px;border:1px solid #e4ece7;border-radius:12px;text-align:center;background:#fbfdfb}
+.library-total strong{display:block;color:#285b4d;font-size:20px}
+.library-total span{display:block;color:#829189;font-size:10px}
+.library-tabs{display:flex;gap:7px;border-bottom:1px solid #e6eeea;margin:18px 0 16px}
+.library-tabs button{display:flex;align-items:center;gap:8px;border:0;background:transparent;padding:12px 15px;color:#71857c;font-size:12px;font-weight:700;border-bottom:2px solid transparent;cursor:pointer}
+.library-tabs button.active{color:#1c5555;border-bottom-color:#1c5555}
+.library-tabs button small{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 5px;border-radius:20px;background:#edf3ef;color:#557268;font-size:10px}
+.library-toolbar{display:flex;align-items:center;gap:10px;margin:0 0 22px}
+.library-search{display:flex;align-items:center;gap:9px;flex:1;min-width:160px;height:42px;padding:0 12px;border:1px solid #e0e9e4;border-radius:9px;background:#fff;color:#83958c}
+.library-search input{width:100%;border:0;outline:0;background:transparent;color:#344f44;font:inherit;font-size:12px}
+.library-search button{border:0;background:transparent;color:#7b8d84;cursor:pointer;padding:3px}
+.library-new-button{white-space:nowrap;min-height:42px}
+.library-editor{display:grid;gap:13px;padding:19px;border:1px solid #dce9e1;border-radius:13px;background:#f8fbf9;margin:0 0 24px}
+.library-editor-title{display:flex;align-items:center;justify-content:space-between}
+.library-editor-title h3{margin:4px 0 0;color:#31554a;font-size:15px}
+.library-editor label{display:grid;gap:7px;color:#526b60;font-size:11px;font-weight:700}
+.library-editor input,.library-editor textarea{width:100%;border:1px solid #dce7e0;border-radius:8px;padding:11px 12px;font:inherit;font-size:12px;color:#344f44;background:white}
+.library-editor textarea{resize:vertical;line-height:1.65}
+.library-editor-actions{display:flex;gap:8px;flex-wrap:wrap}
+.library-list-heading{display:flex;align-items:end;justify-content:space-between;gap:10px;margin:0 0 12px}
+.library-list-heading h3{margin:0 0 4px;color:#34594c;font-size:15px}
+.library-list-heading p{margin:0;color:#839188;font-size:11px}
+.library-list-heading>span{color:#819087;font-size:10px;white-space:nowrap}
+.library-items{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.library-item{min-width:0;padding:16px;border:1px solid #e5ece8;border-radius:12px;background:#fff;box-shadow:0 2px 8px rgba(33,72,55,.035)}
+.library-item-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.library-item-title{display:grid;gap:5px;min-width:0}
+.library-item-title>strong{font-size:13px;line-height:1.4;color:#31554a;overflow-wrap:anywhere}
+.library-item-actions{display:flex;gap:4px;flex-shrink:0}
+.library-item p{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7;font-size:12px;color:#5b7066;margin:13px 0}
+.library-copy{display:inline-flex;align-items:center;gap:7px;border:1px solid #dce9e1;border-radius:7px;background:#f6faf7;padding:8px 11px;color:#285b4d;font-size:11px;font-weight:700;cursor:pointer}
+.library-empty{grid-column:1/-1;display:flex;flex-direction:column;align-items:center;text-align:center;gap:9px;padding:38px 18px;border:1px dashed #dce7e0;border-radius:12px;background:#fbfdfb}
+.library-empty>div{width:48px;height:48px;border-radius:14px;background:#edf4ef;color:#53796a;display:grid;place-items:center}
+.library-empty strong{color:#38594d;font-size:13px}
+.library-empty span{max-width:390px;color:#829188;font-size:11px;line-height:1.6}
+.library-empty button{margin-top:5px}
+@media(max-width:700px){.library-items{grid-template-columns:1fr}.library-hero{align-items:flex-start}.library-total{padding:7px 10px}.library-toolbar{align-items:stretch;flex-direction:column}.library-new-button{justify-content:center}.library-tabs button{flex:1;justify-content:center;padding:11px 6px;font-size:10px}.library-tabs button svg{display:none}.library-list-heading{align-items:flex-start;flex-direction:column}}
