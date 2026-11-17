@@ -19,7 +19,7 @@ jobs:
       contents: read
     steps:
       - name: Baixar o código
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Configurar Node.js
