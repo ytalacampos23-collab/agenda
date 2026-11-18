@@ -306,3 +306,9 @@
 .task-info span .priority-badge{display:inline-flex;vertical-align:middle;width:fit-content}
 
 .calendar-cell.is-selected{box-shadow:inset 0 0 0 2px #6c9b83;background:#f5faf6}.calendar-cell.is-selected .calendar-day{color:#315f49}
+
+
+/* Anotações da Minha Agenda seguem o padrão visual compacto da Biblioteca. */
+.agenda-notes-panel .library-hero{margin-bottom:2px}
+.agenda-notes-toolbar{margin-top:18px}
+.agenda-notes-panel .library-item:has(.library-message-toggle){padding-top:13px;padding-bottom:13px}
