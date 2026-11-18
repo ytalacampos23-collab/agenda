@@ -235,13 +235,8 @@ export default function App() {
   useEffect(() => {
     if (!userId) return
     if (!authVerified || !isOnline || !supabase) return
-    setTasks([])
-    setVisits([])
-    setVisitTopics([])
-    setLibraryItems([])
-    setAgendaNotes([])
-    setHistoryEvents([])
-    setSelectedVisitId('')
+    // Mantém os dados atuais na tela enquanto a sincronização ocorre.
+    // A atualização visual já é feita localmente; a busca remota não deve limpar a interface.
     setPendingCount(readJson<PendingChange[]>(queueKey(userId), []).length + readJson<PendingVisitChange[]>(visitQueueKey(userId), []).length)
     let cancelled = false
     const sync = async () => {
