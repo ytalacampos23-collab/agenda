@@ -503,7 +503,7 @@ export default function App() {
   async function changeStatus(id: string, status: TaskStatus) {
     const task = tasks.find(t => t.id === id)
     if (!task) return
-    const updated = { ...task, status }
+    const updated = { ...task, status, ...(status === 'Concluído' ? { due_date: today() } : {}) }
     const nextTasks = tasks.map(t => t.id === id ? updated : t)
     setTasks(nextTasks); saveTaskCache(userId, nextTasks)
     queueChange(updated)
