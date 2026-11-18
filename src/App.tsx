@@ -10,6 +10,7 @@ type PendingChange = { id: string; task: Task; deleted_at: string | null }
 type Visit = { id: string; user_id: string; visit_date: string; title: string; participants: string | null; notes: string | null; created_at?: string }
 type VisitTopic = { id: string; visit_id: string; user_id: string; category?: string; title: string; description: string | null; responsible: string | null; protocol: string | null; due_date: string | null; status: 'Pendente' | 'Em análise' | 'Resolvido' | 'Não se aplica'; observations: string | null; origin_topic_id?: string | null }
 type LibraryItem = { id: string; user_id: string; kind: 'message' | 'documents'; title: string; content: string; created_at?: string; updated_at?: string }
+type AgendaNote = { id: string; user_id: string; title: string; content: string; created_at?: string; updated_at?: string }
 type TopicTransfer = { id: string; topic_id: string; from_visit_id: string; to_visit_id: string; user_id: string }; type PendingVisitChange = { table: 'visits' | 'visit_topics' | 'topic_transfers'; id: string; record: Visit | VisitTopic | TopicTransfer; action?: 'upsert' | 'delete' }
 function safeRichHtml(value: string | null | undefined) {
   let raw = String(value ?? '');
@@ -74,7 +75,7 @@ const today = () => { const d = new Date(); return [d.getFullYear(), String(d.ge
 export default function App() {
   const [section, setSection] = useState<'agenda' | 'visitas' | 'ouvidoria' | 'historico'>('agenda')
   const [visitPageTab, setVisitPageTab] = useState<'visits' | 'library'>('visits')
-  const [agendaPageTab, setAgendaPageTab] = useState<'agenda' | 'meetings'>('agenda')
+  const [agendaPageTab, setAgendaPageTab] = useState<'agenda' | 'meetings' | 'notes'>('agenda')
   const [sessionReady, setSessionReady] = useState(false)
   const [authVerified, setAuthVerified] = useState(false)
   const [userEmail, setUserEmail] = useState('')
@@ -112,6 +113,14 @@ export default function App() {
   const [expandedLibraryMessageId, setExpandedLibraryMessageId] = useState<string | null>(null)
   const [expandedLibraryDocumentId, setExpandedLibraryDocumentId] = useState<string | null>(null)
   const [expandedMeetingId, setExpandedMeetingId] = useState<string | null>(null)
+  const [agendaNotes, setAgendaNotes] = useState<AgendaNote[]>([])
+  const [agendaNoteTitle, setAgendaNoteTitle] = useState('')
+  const [agendaNoteContent, setAgendaNoteContent] = useState('')
+  const [editingAgendaNoteId, setEditingAgendaNoteId] = useState<string | null>(null)
+  const [agendaNoteFormOpen, setAgendaNoteFormOpen] = useState(false)
+  const [agendaNoteBusy, setAgendaNoteBusy] = useState(false)
+  const [agendaNoteSearch, setAgendaNoteSearch] = useState('')
+  const [expandedAgendaNoteId, setExpandedAgendaNoteId] = useState<string | null>(null)
   const [historyEvents, setHistoryEvents] = useState<Array<{id:string; created_at:string; event_type:string; old_value:any; new_value:any; entity_type:'Atividade'|'Assunto'}>>([])
   const [historyFilter, setHistoryFilter] = useState<'agenda' | 'visitas'>('agenda')
   const [selectedVisitId, setSelectedVisitId] = useState('')
@@ -230,6 +239,7 @@ export default function App() {
     setVisits([])
     setVisitTopics([])
     setLibraryItems([])
+    setAgendaNotes([])
     setHistoryEvents([])
     setSelectedVisitId('')
     setPendingCount(readJson<PendingChange[]>(queueKey(userId), []).length + readJson<PendingVisitChange[]>(visitQueueKey(userId), []).length)
@@ -278,6 +288,9 @@ export default function App() {
           const libraryResult = await supabase!.from('cemig_library_items').select('id,user_id,kind,title,content,created_at,updated_at').order('created_at', { ascending: false })
           if (libraryResult.error) throw libraryResult.error
           setLibraryItems((libraryResult.data ?? []) as LibraryItem[])
+          const notesResult = await supabase!.from('agenda_notes').select('id,user_id,title,content,created_at,updated_at').order('created_at', { ascending: false })
+          if (notesResult.error) throw notesResult.error
+          setAgendaNotes((notesResult.data ?? []) as AgendaNote[])
           setPendingCount(readJson<PendingChange[]>(queueKey(userId), []).length + readJson<PendingVisitChange[]>(visitQueueKey(userId), []).length)
           setError('')
           setSyncFailed(false)
@@ -342,6 +355,35 @@ export default function App() {
       setNotice('Registro excluído da biblioteca.')
     } catch (e) { setError('Não foi possível excluir: ' + ((e as {message?:string}).message ?? 'erro inesperado')) }
     finally { setLibraryBusy(false) }
+  }
+
+  function resetAgendaNoteForm() { setEditingAgendaNoteId(null); setAgendaNoteTitle(''); setAgendaNoteContent(''); setAgendaNoteFormOpen(false) }
+  function editAgendaNote(note: AgendaNote) { setEditingAgendaNoteId(note.id); setAgendaNoteTitle(note.title); setAgendaNoteContent(note.content); setAgendaNoteFormOpen(true) }
+  async function saveAgendaNote(event: FormEvent) {
+    event.preventDefault()
+    if (!supabase || !userId || !agendaNoteTitle.trim() || !agendaNoteContent.trim()) return
+    setAgendaNoteBusy(true); setError('')
+    try {
+      const payload = { id: editingAgendaNoteId ?? crypto.randomUUID(), user_id: userId, title: agendaNoteTitle.trim(), content: agendaNoteContent.trim() }
+      const result = await supabase.from('agenda_notes').upsert(payload, { onConflict: 'id' }).select('id,user_id,title,content,created_at,updated_at').single()
+      if (result.error) throw result.error
+      setAgendaNotes(current => [result.data as AgendaNote, ...current.filter(item => item.id !== payload.id)])
+      resetAgendaNoteForm(); setNotice('Anotação salva com sucesso.')
+    } catch (e) { setError('Não foi possível salvar a anotação: ' + ((e as {message?:string}).message ?? 'erro inesperado')) }
+    finally { setAgendaNoteBusy(false) }
+  }
+  async function deleteAgendaNote(note: AgendaNote) {
+    if (!supabase || !userId || !window.confirm('Excluir a anotação "' + note.title + '"?')) return
+    setAgendaNoteBusy(true)
+    try {
+      const result = await supabase.from('agenda_notes').delete().eq('id', note.id).eq('user_id', userId)
+      if (result.error) throw result.error
+      setAgendaNotes(current => current.filter(item => item.id !== note.id))
+      if (editingAgendaNoteId === note.id) resetAgendaNoteForm()
+      if (expandedAgendaNoteId === note.id) setExpandedAgendaNoteId(null)
+      setNotice('Anotação excluída.')
+    } catch (e) { setError('Não foi possível excluir a anotação: ' + ((e as {message?:string}).message ?? 'erro inesperado')) }
+    finally { setAgendaNoteBusy(false) }
   }
 
   function collectTopicDescendants(rootIds: string[]) {
@@ -875,6 +917,7 @@ export default function App() {
           <div className="visit-page-tabs" role="tablist" aria-label="Seções da Minha Agenda">
             <button type="button" role="tab" aria-selected={agendaPageTab === 'agenda'} className={agendaPageTab === 'agenda' ? 'active' : ''} onClick={() => setAgendaPageTab('agenda')}><CalendarDays size={16}/> Agenda</button>
             <button type="button" role="tab" aria-selected={agendaPageTab === 'meetings'} className={agendaPageTab === 'meetings' ? 'active' : ''} onClick={() => setAgendaPageTab('meetings')}><CalendarClock size={16}/> Reunião</button>
+            <button type="button" role="tab" aria-selected={agendaPageTab === 'notes'} className={agendaPageTab === 'notes' ? 'active' : ''} onClick={() => setAgendaPageTab('notes')}><BookOpen size={16}/> Anotações</button>
           </div>
           {agendaPageTab === 'agenda' && <>
           <div className="stats">
@@ -935,6 +978,28 @@ export default function App() {
             </article>)}</div>}
           </section>
           </>}
+          {agendaPageTab === 'notes' && <section className="panel agenda-notes-panel">
+            <div className="library-hero">
+              <div className="library-hero-icon"><BookOpen size={23}/></div>
+              <div className="library-hero-copy"><span>REGISTROS PESSOAIS</span><h2>Minhas anotações</h2><p>Guarde conhecimentos, orientações e informações importantes para consultar sempre que precisar.</p></div>
+              <div className="library-total"><strong>{agendaNotes.length}</strong><span>anotações salvas</span></div>
+            </div>
+            <div className="library-toolbar agenda-notes-toolbar">
+              <label className="library-search"><Search size={17}/><input aria-label="Pesquisar anotações" value={agendaNoteSearch} onChange={e => setAgendaNoteSearch(e.target.value)} placeholder="Buscar anotação pelo título ou conteúdo..."/>{agendaNoteSearch && <button type="button" onClick={() => setAgendaNoteSearch('')} aria-label="Limpar pesquisa"><X size={15}/></button>}</label>
+              <button type="button" className="primary-button library-new-button" onClick={() => { if (agendaNoteFormOpen && !editingAgendaNoteId) resetAgendaNoteForm(); else { resetAgendaNoteForm(); setAgendaNoteFormOpen(true) } }}><Plus size={16}/>{agendaNoteFormOpen && !editingAgendaNoteId ? 'Fechar cadastro' : 'Nova anotação'}</button>
+            </div>
+            {agendaNoteFormOpen && <form className="library-editor" onSubmit={saveAgendaNote}>
+              <div className="library-editor-title"><div><span>{editingAgendaNoteId ? 'EDIÇÃO' : 'NOVO REGISTRO'}</span><h3>{editingAgendaNoteId ? 'Editar anotação' : 'Cadastrar anotação'}</h3></div><button type="button" className="icon-button" onClick={resetAgendaNoteForm} aria-label="Fechar formulário"><X size={17}/></button></div>
+              <label>Título da anotação<input required value={agendaNoteTitle} onChange={e => setAgendaNoteTitle(e.target.value)} placeholder="Ex.: Orientações sobre determinado processo"/></label>
+              <label>Conteúdo da anotação<textarea required rows={8} value={agendaNoteContent} onChange={e => setAgendaNoteContent(e.target.value)} placeholder="Registre conhecimentos, orientações, lembretes e informações que deseja consultar depois..."/></label>
+              <div className="library-editor-actions"><button className="primary-button" type="submit" disabled={agendaNoteBusy || !agendaNoteTitle.trim() || !agendaNoteContent.trim()}><Save size={15}/>{agendaNoteBusy ? 'Salvando...' : editingAgendaNoteId ? 'Salvar alterações' : 'Salvar anotação'}</button><button type="button" className="secondary-button" onClick={resetAgendaNoteForm}>Cancelar</button></div>
+            </form>}
+            <div className="library-list-heading"><div><h3>Suas anotações</h3><p>Os registros ficam guardados na sua conta, separados das reuniões e atividades.</p></div><span>{agendaNotes.filter(note => (note.title + ' ' + note.content).toLocaleLowerCase('pt-BR').includes(agendaNoteSearch.toLocaleLowerCase('pt-BR'))).length} resultado(s)</span></div>
+            <div className="library-items">{agendaNotes.filter(note => (note.title + ' ' + note.content).toLocaleLowerCase('pt-BR').includes(agendaNoteSearch.toLocaleLowerCase('pt-BR'))).length === 0 ? <div className="library-empty"><div><BookOpen size={25}/></div><strong>{agendaNoteSearch ? 'Nenhuma anotação encontrada' : 'Você ainda não tem anotações'}</strong><span>{agendaNoteSearch ? 'Tente buscar por outro termo.' : 'Cadastre aqui conhecimentos e orientações que não são pautas de reunião. Eles ficarão disponíveis para consulta sempre que precisar.'}</span>{!agendaNoteSearch && <button type="button" className="secondary-button" onClick={() => setAgendaNoteFormOpen(true)}><Plus size={15}/> Criar primeira anotação</button>}</div> : agendaNotes.filter(note => (note.title + ' ' + note.content).toLocaleLowerCase('pt-BR').includes(agendaNoteSearch.toLocaleLowerCase('pt-BR'))).map(note => <article className="library-item" key={note.id}>
+              <div className="library-item-heading"><div className="library-item-title"><button type="button" className="library-message-toggle" aria-expanded={expandedAgendaNoteId === note.id} onClick={() => setExpandedAgendaNoteId(expandedAgendaNoteId === note.id ? null : note.id)}>{note.title}<span>{expandedAgendaNoteId === note.id ? 'Ocultar anotação' : 'Ver anotação'}</span></button></div><div className="library-item-actions"><button type="button" className="icon-button" title="Editar anotação" aria-label={'Editar ' + note.title} onClick={() => editAgendaNote(note)}><Pencil size={15}/></button><button type="button" className="icon-button danger-icon" title="Excluir anotação" aria-label={'Excluir ' + note.title} onClick={() => deleteAgendaNote(note)}><Trash2 size={15}/></button></div></div>
+              {expandedAgendaNoteId === note.id && <p>{note.content}</p>}
+            </article>)}</div>
+          </section>}
         </>}
         {section === 'visitas' && <>
           <div className="visit-page-tabs" role="tablist" aria-label="Seções da Visita à Cemig">
