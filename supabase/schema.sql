@@ -298,3 +298,22 @@ create index if not exists cemig_library_user_kind_idx on public.cemig_library_i
 drop trigger if exists cemig_library_set_updated_at on public.cemig_library_items;
 create trigger cemig_library_set_updated_at before update on public.cemig_library_items
 for each row execute function public.wattwise_set_updated_at();
+
+
+-- Anotações permanentes da Minha Agenda, separadas de reuniões e atividades.
+create table if not exists public.agenda_notes (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  title text not null,
+  content text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table public.agenda_notes enable row level security;
+drop policy if exists "users manage own agenda notes" on public.agenda_notes;
+create policy "users manage own agenda notes" on public.agenda_notes
+for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create index if not exists agenda_notes_user_created_idx on public.agenda_notes(user_id, created_at desc);
+drop trigger if exists agenda_notes_set_updated_at on public.agenda_notes;
+create trigger agenda_notes_set_updated_at before update on public.agenda_notes
+for each row execute function public.wattwise_set_updated_at();
