@@ -48,7 +48,10 @@ function RichNotesEditor({ editorRef, value, onChange, placeholder }: { editorRe
   const localRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = localRef.current;
-    if (el && el.innerHTML !== safeRichHtml(value)) el.innerHTML = safeRichHtml(value);
+    const currentValue = String(value ?? '');
+    // Não reescreve o HTML produzido pela própria digitação: isso preserva o cursor
+    // e impede que o Enter faça o texto voltar para o início do campo.
+    if (el && el.innerHTML !== currentValue) el.innerHTML = safeRichHtml(value);
     editorRef.current = el;
   }, [value, editorRef]);
   return <div ref={localRef} className="rich-notes-editor" contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" data-placeholder={placeholder} onInput={e => onChange(e.currentTarget.innerHTML)}/>;
