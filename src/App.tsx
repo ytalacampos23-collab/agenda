@@ -89,6 +89,7 @@ export default function App() {
   const [password, setPassword] = useState('')
   const [authBusy, setAuthBusy] = useState(false)
   const [tasks, setTasks] = useState<Task[]>([])
+  const [currentDate, setCurrentDate] = useState(today())
   const [showAddTaskForm, setShowAddTaskForm] = useState(false)
   const [meetingFormOpen, setMeetingFormOpen] = useState(false)
   const [meetingTitle, setMeetingTitle] = useState('')
@@ -409,6 +410,30 @@ export default function App() {
     setPendingCount(next.length + readJson<PendingVisitChange[]>(visitQueueKey(userId), []).length)
     setSyncVersion(v => v + 1)
   }
+
+  useEffect(() => {
+    const refreshDay = () => setCurrentDate(today())
+    const timer = window.setInterval(refreshDay, 60000)
+    window.addEventListener('focus', refreshDay)
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', refreshDay) }
+  }, [])
+
+  useEffect(() => {
+    if (!userId || tasks.length === 0) return
+    const rolledTasks = tasks.map(task =>
+      task.category !== 'Reunião' && task.due_date < currentDate && task.status !== 'Concluído'
+        ? { ...task, due_date: currentDate }
+        : task
+    )
+    const changed = rolledTasks.filter((task, index) => task.due_date !== tasks[index].due_date)
+    if (changed.length === 0) return
+    setTasks(rolledTasks)
+    saveTaskCache(userId, rolledTasks)
+    changed.forEach(task => queueChange(task))
+    setNotice(changed.length === 1
+      ? 'Uma atividade pendente foi transferida para hoje.'
+      : changed.length + ' atividades pendentes foram transferidas para hoje.')
+  }, [userId, currentDate, tasks])
 
   async function handleAuth(event: FormEvent) {
     event.preventDefault()
@@ -778,15 +803,14 @@ export default function App() {
     setNotice('Você saiu da sua conta. Os dados e arquivos temporários locais do Watt-Wise foram apagados.')
   }
 
-  const visibleTasks = useMemo(() => tasks.filter(t => t.category !== 'Reunião' &&
+  const visibleTasks = useMemo(() => tasks.filter(t => t.category !== 'Reunião' && t.due_date === currentDate &&
     (statusFilter === 'Todos' || t.status === statusFilter) &&
     (categoryFilter === 'Todas' || t.category === categoryFilter) &&
     (priorityFilter === 'Todas' || t.priority === priorityFilter) &&
     (assigneeFilter === 'Todas' || (t.assigned_to ?? '') === assigneeFilter) &&
-    (!dateFrom || t.due_date >= dateFrom) && (!dateTo || t.due_date <= dateTo) &&
     (t.title.toLowerCase().includes(search.toLowerCase()) || t.category.toLowerCase().includes(search.toLowerCase()) || (t.description ?? '').toLowerCase().includes(search.toLowerCase()))
-  ), [tasks,statusFilter,categoryFilter,priorityFilter,assigneeFilter,dateFrom,dateTo,search])
-  const overdueTasks = tasks.filter(t => t.status !== 'Concluído' && t.due_date < today())
+  ), [tasks,currentDate,statusFilter,categoryFilter,priorityFilter,assigneeFilter,search])
+  const overdueTasks = tasks.filter(t => t.status !== 'Concluído' && t.due_date < currentDate)
   const dashboardVisits = dashboardVisitFilter === 'Pendente' || dashboardVisitFilter === 'Em análise' || dashboardVisitFilter === 'Resolvido' ? visits.filter(v => visitTopics.some(t => t.visit_id === v.id && t.status === dashboardVisitFilter)) : visits
   const clearTaskFilters = () => { setStatusFilter('Todos'); setCategoryFilter('Todas'); setPriorityFilter('Todas'); setAssigneeFilter('Todas'); setDateFrom(''); setDateTo(''); setSearch('') }
   const assignees = [...new Set(tasks.map(task => task.assigned_to?.trim()).filter((name): name is string => Boolean(name)))].sort((a,b) => a.localeCompare(b,'pt-BR'))
@@ -852,10 +876,10 @@ export default function App() {
           </div>
           {agendaPageTab === 'agenda' && <>
           <div className="stats">
-            <div className="stat-card"><span>Atividades cadastradas</span><strong>{tasks.length}</strong><CalendarDays/></div>
-            <div className="stat-card"><span>A fazer</span><strong>{tasks.filter(t => t.status === 'A fazer').length}</strong><AlertCircle/></div>
-            <div className="stat-card"><span>Em andamento</span><strong>{tasks.filter(t => t.status === 'Em andamento').length}</strong><Clock3/></div>
-            <div className="stat-card"><span>Concluídas</span><strong>{tasks.filter(t => t.status === 'Concluído').length}</strong><CheckCircle2/></div>
+            <div className="stat-card"><span>Atividades do dia</span><strong>{tasks.filter(t => t.due_date === currentDate && t.category !== 'Reunião').length}</strong><CalendarDays/></div>
+            <div className="stat-card"><span>A fazer</span><strong>{tasks.filter(t => t.due_date === currentDate && t.status === 'A fazer' && t.category !== 'Reunião').length}</strong><AlertCircle/></div>
+            <div className="stat-card"><span>Em andamento</span><strong>{tasks.filter(t => t.due_date === currentDate && t.status === 'Em andamento' && t.category !== 'Reunião').length}</strong><Clock3/></div>
+            <div className="stat-card"><span>Concluídas</span><strong>{tasks.filter(t => t.due_date === currentDate && t.status === 'Concluído' && t.category !== 'Reunião').length}</strong><CheckCircle2/></div>
             <div className="stat-card overdue-stat"><span>Atrasadas</span><strong>{overdueTasks.length}</strong><AlertCircle/></div>
           </div>
           <section className="panel">
@@ -875,7 +899,7 @@ export default function App() {
           <section className="panel">
             <div className="panel-heading list-heading"><div><h2>Suas atividades</h2><p>As atividades ficam salvas na sua conta.</p></div><div className="list-filter-group"><label className="filter">Status<select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option>Todos</option><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select></label><label className="filter">Categoria<select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}><option>Todas</option>{categories.map(c => <option key={c[0]}>{c[0]}</option>)}</select></label><label className="filter">Prioridade<select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}><option>Todas</option><option>Baixa</option><option>Média</option><option>Alta</option><option>Urgente</option></select></label><label className="filter">Responsável<select value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)}><option>Todas</option>{assignees.map(name => <option key={name}>{name}</option>)}</select></label></div></div>
             <div className="search-line"><Search size={15}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por atividade, descrição ou categoria..."/></div>
-            <div className="task-filters"><label>De<input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}/></label><label>Até<input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)}/></label><button type="button" className="secondary-button" onClick={clearTaskFilters}>Limpar filtros</button></div>
+            <div className="task-filters"><span>Exibindo somente as atividades de {new Date(currentDate + 'T12:00:00').toLocaleDateString('pt-BR')}.</span><button type="button" className="secondary-button" onClick={clearTaskFilters}>Limpar filtros</button></div>
             {loadingTasks ? <div className="empty"><LoaderCircle className="spin"/><span>Carregando atividades...</span></div> : visibleTasks.length === 0 ? <div className="empty"><CalendarDays size={28}/><strong>Nenhuma atividade por aqui</strong><span>Adicione uma atividade acima para começar.</span></div> : <div className="task-list">{visibleTasks.map(task => <div className={'task-row ' + (task.status !== 'Concluído' && task.due_date < today() ? 'task-overdue' : '')} key={task.id}><div className="task-dot" style={{background: categories.find(c => c[0] === task.category)?.[1]}}/><div className="task-info"><strong>{task.title}</strong><span>{task.category} · {new Date(`${task.due_date}T12:00:00`).toLocaleDateString('pt-BR')}{task.due_time ? ` · ${task.due_time.slice(0,5)}` : ''} · <span className={'priority-badge priority-' + task.priority.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'')}>{task.priority}</span>{task.assigned_to ? ' · Responsável: ' + task.assigned_to : ''}</span>{task.description && <small>{task.description}</small>}</div><select className={'status-select status-' + task.status.toLowerCase().replace(/ /g,'-').replace('í','i')} aria-label={`Status de ${task.title}`} value={task.status} onChange={e => changeStatus(task.id, e.target.value as TaskStatus)}><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select><button type="button" className="icon-button" onClick={() => setEditingTask({...task})} title="Editar atividade"><Pencil size={15}/></button><button type="button" className="icon-button" onClick={() => deleteTask(task.id)} title="Excluir atividade"><Trash2 size={15}/></button>{editingTask?.id === task.id && <form className="edit-task-form" onSubmit={saveEditedTask}><label>Título<input required value={editingTask.title} onChange={e => setEditingTask({...editingTask,title:e.target.value})}/></label><label>Descrição<input value={editingTask.description ?? ''} onChange={e => setEditingTask({...editingTask,description:e.target.value})}/></label><label>Categoria<select value={editingTask.category} onChange={e => setEditingTask({...editingTask,category:e.target.value})}>{categories.map(item => <option key={item[0]}>{item[0]}</option>)}</select></label><label>Data<input type="date" required value={editingTask.due_date} onChange={e => setEditingTask({...editingTask,due_date:e.target.value})}/></label><label>Horário<input type="time" value={editingTask.due_time ?? ''} onChange={e => setEditingTask({...editingTask,due_time:e.target.value || null})}/></label><label>Prioridade<select value={editingTask.priority} onChange={e => setEditingTask({...editingTask,priority:e.target.value as Priority})}><option>Baixa</option><option>Média</option><option>Alta</option><option>Urgente</option></select></label><label>Responsável pela execução<input value={editingTask.assigned_to ?? ''} onChange={e => setEditingTask({...editingTask,assigned_to:e.target.value || null})} placeholder="Nome do responsável"/></label><label className="calendar-choice"><input type="checkbox" checked={editingTask.show_on_calendar !== false} onChange={e => setEditingTask({...editingTask,show_on_calendar:e.target.checked})}/> Exibir esta tarefa no calendário</label><div className="edit-actions"><button className="primary-button" type="submit">Salvar alterações</button><button className="secondary-button" type="button" onClick={() => setEditingTask(null)}>Cancelar</button></div></form>}</div>)}</div>}
           </section>
           <section className="panel calendar-panel">
