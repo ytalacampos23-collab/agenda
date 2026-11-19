@@ -54,7 +54,7 @@ function RichNotesEditor({ editorRef, value, onChange, placeholder }: { editorRe
     if (el && el.innerHTML !== currentValue) el.innerHTML = safeRichHtml(value);
     editorRef.current = el;
   }, [value, editorRef]);
-  return <div ref={localRef} className="rich-notes-editor" contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" data-placeholder={placeholder} onInput={e => onChange(e.currentTarget.innerHTML)}/>;
+  return <div ref={localRef} className="rich-notes-editor" contentEditable="true" suppressContentEditableWarning role="textbox" aria-multiline="true" tabIndex={0} data-placeholder={placeholder} onClick={e => { if (document.activeElement !== e.currentTarget) e.currentTarget.focus() }} onInput={e => onChange(e.currentTarget.innerHTML)}/>;
 }
 const cacheKey = (id: string) => 'wattwise:' + id + ':tasks'
 const queueKey = (id: string) => 'wattwise:' + id + ':queue'
