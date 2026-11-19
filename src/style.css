@@ -321,3 +321,7 @@
 
 .notes-field-title{display:block;margin-bottom:7px;color:#637975;font-size:11px;font-weight:650}
 .rich-notes-editor{position:relative;z-index:1;display:block;pointer-events:auto;cursor:text;user-select:text;-webkit-user-select:text}
+
+/* Status direto dos compromissos e reuniões */
+.meeting-status-control{display:flex;align-items:center;gap:7px;margin-top:9px;font-size:11px;color:#71867e}
+.meeting-status-control .status-select{max-width:160px}
