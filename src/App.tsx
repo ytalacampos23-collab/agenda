@@ -14,42 +14,76 @@ type AgendaNote = { id: string; user_id: string; title: string; content: string;
 type TopicTransfer = { id: string; topic_id: string; from_visit_id: string; to_visit_id: string; user_id: string }; type PendingVisitChange = { table: 'visits' | 'visit_topics' | 'topic_transfers'; id: string; record: Visit | VisitTopic | TopicTransfer; action?: 'upsert' | 'delete' }
 function safeRichHtml(value: string | null | undefined) {
   let raw = String(value ?? '');
-  // Converte quebras escapadas de mensagens copiadas e preserva a estrutura Markdown ao reabrir.
-  raw = raw.replace(/\\\\s*\r?\n/g, '\n').replace(/\\n/g, '\n');
-  if (/&lt;\/?(?:span|b|strong|mark|br|p|div)\b/i.test(raw)) {
+  // Normaliza quebras vindas de texto copiado (inclusive barra invertida antes da quebra).
+  raw = raw.replace(/\\[ \t]*\r?\n/g, '\n').replace(/\\n/g, '\n').replace(/\\([\-.*])/g, '$1');
+  if (/&lt;\/?(?:span|b|strong|mark|br|p|div|h[2-4]|ul|ol|li)\b/i.test(raw)) {
     raw = raw.replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;/gi, "'");
   }
   const escapeText = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/==(.*?)==/g, '<mark>$1</mark>');
-  // Texto colado em Markdown vira títulos, subtítulos e listas de verdade no editor.
+  // Converte texto simples/Markdown em blocos reais para manter a formatação após salvar.
   if (!/<\/?[a-z][^>]*>/i.test(raw)) {
     const lines = raw.split(/\r?\n/);
     const out: string[] = [];
     let list: 'ul' | 'ol' | null = null;
     const closeList = () => { if (list) { out.push('</' + list + '>'); list = null; } };
+    const addLine = (line: string) => {
+      const numbered = line.match(/^(\d+)[.)]\s+([A-ZÀ-Ú][^*]+?)\s+\*\*(.+?)\*\*:?\s*$/i);
+      const bullet = line.match(/^[-•]\s+(.+)$/);
+      if (numbered) {
+        closeList();
+        out.push('<h3>' + escapeText(numbered[1] + '. ' + numbered[2].trim()) + '</h3>');
+        out.push('<h4>' + escapeText(numbered[3].replace(/:$/, '')) + '</h4>');
+        return;
+      }
+      if (bullet) {
+        if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul'; }
+        out.push('<li>' + escapeText(bullet[1]) + '</li>');
+        return;
+      }
+      const numberedItem = line.match(/^\d+[.)]\s+(.+)$/);
+      if (numberedItem) {
+        if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol'; }
+        out.push('<li>' + escapeText(numberedItem[1]) + '</li>');
+        return;
+      }
+      closeList();
+      const attention = line.match(/^(PONTOS DE ATENÇÃO|REUNIÃO)(?:\s*[–—:-]\s*(.*))?$/i);
+      if (attention) {
+        out.push('<h2>' + escapeText(attention[1]) + '</h2>');
+        if (attention[2]) addLine(attention[2].trim());
+        return;
+      }
+      const inlineHeading = line.match(/^(.*?)(\*\*[^*]+:\*\*)(.*)$/);
+      if (inlineHeading) {
+        const prefix = inlineHeading[1].trim();
+        if (prefix) out.push('<h2>' + escapeText(prefix) + '</h2>');
+        out.push('<h4>' + escapeText(inlineHeading[2].replace(/^\*\*|\*\*$/g, '').replace(/:$/, '')) + '</h4>');
+        const suffix = inlineHeading[3].trim();
+        if (suffix) addLine(suffix);
+        return;
+      }
+      if (/^\*\*.+\*\*:?$/.test(line)) {
+        out.push('<h4>' + escapeText(line.replace(/^\*\*|\*\*:?$/g, '').replace(/:$/, '')) + '</h4>');
+      } else {
+        out.push('<p>' + escapeText(line) + '</p>');
+      }
+    };
     for (const original of lines) {
       const line = original.trim();
-      if (!line) { closeList(); continue; }
-      const numbered = line.match(/^\d+[.)]\s+(.+)$/);
-      const bullet = line.match(/^[-•]\s+(.+)$/);
-      if (numbered || bullet) {
-        const next = numbered ? 'ol' : 'ul';
-        if (list !== next) { closeList(); out.push('<' + next + '>'); list = next; }
-        out.push('<li>' + escapeText((numbered ?? bullet)![1]) + '</li>');
-      } else {
-        closeList();
-        if (/^(REUNIÃO|PONTOS DE ATENÇÃO)(?:\s*[–—:-]|$)/i.test(line)) out.push('<h2>' + escapeText(line) + '</h2>');
-        else if (/^\*\*.+\*\*:?$/.test(line)) out.push('<h3>' + escapeText(line.replace(/^\*\*|\*\*:?$/g, '')) + '</h3>');
-        else out.push('<div>' + escapeText(line) + '</div>');
-      }
+      if (line) addLine(line);
+      else closeList();
     }
     closeList();
     return out.join('');
   }
   const doc = new DOMParser().parseFromString(raw, 'text/html');
   const clean = (node: Node): string => {
-    if (node.nodeType === Node.TEXT_NODE) return escapeText(node.textContent ?? '');
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = (node.textContent ?? '').replace(/\\[ \t]*\r?\n/g, '\n').replace(/\\n/g, '\n');
+      return escapeText(text).replace(/\r?\n/g, '<br>');
+    }
     if (node.nodeType !== Node.ELEMENT_NODE) return '';
     const el = node as HTMLElement;
     const tag = el.tagName.toLowerCase();
@@ -58,8 +92,8 @@ function safeRichHtml(value: string | null | undefined) {
     if (tag === 'mark') return '<mark>' + content + '</mark>';
     if (tag === 'span') {
       const style = (el.getAttribute('style') ?? '').toLowerCase();
-      if (/background(-color)?\\s*:\\s*(#fff176|yellow|rgb\\(255,\\s*241,\\s*118\\))/i.test(style)) return '<mark>' + content + '</mark>';
-      if (/font-weight\\s*:\\s*(bold|bolder|[6-9]00)/i.test(style)) return '<strong>' + content + '</strong>';
+      if (/background(-color)?\s*:\s*(#fff176|yellow|rgb\(255,\s*241,\s*118\))/i.test(style)) return '<mark>' + content + '</mark>';
+      if (/font-weight\s*:\s*(bold|bolder|[6-9]00)/i.test(style)) return '<strong>' + content + '</strong>';
       return content;
     }
     if (tag === 'br') return '<br>';
@@ -67,7 +101,7 @@ function safeRichHtml(value: string | null | undefined) {
     if (tag === 'ul' || tag === 'ol') return '<' + tag + '>' + content + '</' + tag + '>';
     if (tag === 'li') return '<li>' + content + '</li>';
     if (tag === 'blockquote') return '<blockquote>' + content + '</blockquote>';
-    if (tag === 'p' || tag === 'div') return '<div>' + content + '</div>';
+    if (tag === 'p' || tag === 'div') return '<p>' + content + '</p>';
     return content;
   };
   return Array.from(doc.body.childNodes).map(clean).join('');
