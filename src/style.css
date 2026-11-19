@@ -325,3 +325,11 @@
 /* Status direto dos compromissos e reuniões */
 .meeting-status-control{display:flex;align-items:center;gap:7px;margin-top:9px;font-size:11px;color:#71867e}
 .meeting-status-control .status-select{max-width:160px}
+
+.audit-summary-enhanced{grid-template:repeat(2,minmax(0,1fr)) / repeat(2,minmax(0,1fr))}
+.audit-validation-warnings{margin:0 0 14px;padding:12px 14px;border:1px solid #f0d8a7;border-radius:9px;background:#fff9ed;color:#805b24;font-size:11px;line-height:1.55}
+.audit-validation-warnings strong{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700}
+.audit-validation-warnings ul{margin:7px 0 0;padding-left:19px}
+.audit-validation-warnings li+li{margin-top:4px}
+.audit-validation-ok{display:flex;align-items:center;gap:7px;margin:0 0 14px;padding:10px 12px;border:1px solid #dcebe1;border-radius:8px;background:#f2f8f3;color:#477064;font-size:10px;line-height:1.5}
+@media(max-width:650px){.audit-summary-enhanced{grid-template-columns:1fr}}
