@@ -14,18 +14,42 @@ type AgendaNote = { id: string; user_id: string; title: string; content: string;
 type TopicTransfer = { id: string; topic_id: string; from_visit_id: string; to_visit_id: string; user_id: string }; type PendingVisitChange = { table: 'visits' | 'visit_topics' | 'topic_transfers'; id: string; record: Visit | VisitTopic | TopicTransfer; action?: 'upsert' | 'delete' }
 function safeRichHtml(value: string | null | undefined) {
   let raw = String(value ?? '');
-  // Recupera conteúdo que versões anteriores possam ter salvo como HTML escapado.
-  if (/&lt;\/?(?:span|b|strong|mark|br|p|div)\b/i.test(raw)) {
+  // Converte quebras escapadas de mensagens copiadas e preserva a estrutura Markdown ao reabrir.
+  raw = raw.replace(/\\\\\\s*\r?\n/g, '\n').replace(/\\n/g, '\n');
+  if (/&lt;\\/?(?:span|b|strong|mark|br|p|div)\\b/i.test(raw)) {
     raw = raw.replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;/gi, "'");
   }
-  if (!/<\/?[a-z][^>]*>/i.test(raw)) {
-    return raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/==(.*?)==/g, '<mark>$1</mark>').replace(/\n/g, '<br>');
+  const escapeText = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')
+    .replace(/==(.*?)==/g, '<mark>$1</mark>');
+  // Texto colado em Markdown vira títulos, subtítulos e listas de verdade no editor.
+  if (!/<\\/?[a-z][^>]*>/i.test(raw)) {
+    const lines = raw.split(/\r?\n/);
+    const out: string[] = [];
+    let list: 'ul' | 'ol' | null = null;
+    const closeList = () => { if (list) { out.push('</' + list + '>'); list = null; } };
+    for (const original of lines) {
+      const line = original.trim();
+      if (!line) { closeList(); continue; }
+      const numbered = line.match(/^\\d+[.)]\\s+(.+)$/);
+      const bullet = line.match(/^[-•]\\s+(.+)$/);
+      if (numbered || bullet) {
+        const next = numbered ? 'ol' : 'ul';
+        if (list !== next) { closeList(); out.push('<' + next + '>'); list = next; }
+        out.push('<li>' + escapeText((numbered ?? bullet)![1]) + '</li>');
+      } else {
+        closeList();
+        if (/^(REUNIÃO|PONTOS DE ATENÇÃO)(?:\\s*[–—:-]|$)/i.test(line)) out.push('<h2>' + escapeText(line) + '</h2>');
+        else if (/^\\*\\*.+\\*\\*:?$/.test(line)) out.push('<h3>' + escapeText(line.replace(/^\\*\\*|\\*\\*:?$/g, '')) + '</h3>');
+        else out.push('<div>' + escapeText(line) + '</div>');
+      }
+    }
+    closeList();
+    return out.join('');
   }
   const doc = new DOMParser().parseFromString(raw, 'text/html');
   const clean = (node: Node): string => {
-    if (node.nodeType === Node.TEXT_NODE) return (node.textContent ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    if (node.nodeType === Node.TEXT_NODE) return escapeText(node.textContent ?? '');
     if (node.nodeType !== Node.ELEMENT_NODE) return '';
     const el = node as HTMLElement;
     const tag = el.tagName.toLowerCase();
@@ -34,8 +58,8 @@ function safeRichHtml(value: string | null | undefined) {
     if (tag === 'mark') return '<mark>' + content + '</mark>';
     if (tag === 'span') {
       const style = (el.getAttribute('style') ?? '').toLowerCase();
-      if (/background(-color)?\s*:\s*(#fff176|yellow|rgb\(255,\s*241,\s*118\))/i.test(style)) return '<mark>' + content + '</mark>';
-      if (/font-weight\s*:\s*(bold|bolder|[6-9]00)/i.test(style)) return '<strong>' + content + '</strong>';
+      if (/background(-color)?\\s*:\\s*(#fff176|yellow|rgb\\(255,\\s*241,\\s*118\\))/i.test(style)) return '<mark>' + content + '</mark>';
+      if (/font-weight\\s*:\\s*(bold|bolder|[6-9]00)/i.test(style)) return '<strong>' + content + '</strong>';
       return content;
     }
     if (tag === 'br') return '<br>';
