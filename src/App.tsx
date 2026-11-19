@@ -910,7 +910,7 @@ export default function App() {
         <div className="welcome"><div><div className="eyebrow">PAINEL DE CONTROLE</div><h1>{section === 'agenda' ? 'Minha Agenda' : section === 'visitas' ? 'Visita à Cemig' : section === 'ouvidoria' ? 'Auditoria' : 'Histórico'}</h1><p>{section === 'agenda' ? 'Organize suas atividades, reuniões e agendamentos.' : section === 'visitas' ? 'Registre atas, encaminhamentos e pendências das visitas.' : section === 'ouvidoria' ? 'Área reservada para desenvolvimento dos registros e acompanhamentos da Auditoria.' : 'Acompanhe as movimentações registradas no sistema.'}</p></div><label className="date-chip"><CalendarDays size={16}/><span>Data</span><input aria-label="Selecionar data" type="date" value={selectedDashboardDate} onChange={e => { const day = e.target.value; setSelectedDashboardDate(day); setSelectedAgendaDate(day); setCalendarDate(day); setCalendarView('day') }}/></label></div>
 
         {error && <div className="error-message">{error}<button onClick={() => setError('')}>Fechar</button></div>}
-        {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')}>Fechar</button></div>}
+        {notice && (section === 'agenda' || !notice.includes('transferida para hoje')) && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')}>Fechar</button></div>}
         {section === 'agenda' && <>
           <div className="visit-page-tabs" role="tablist" aria-label="Seções da Minha Agenda">
             <button type="button" role="tab" aria-selected={agendaPageTab === 'agenda'} className={agendaPageTab === 'agenda' ? 'active' : ''} onClick={() => setAgendaPageTab('agenda')}><CalendarDays size={16}/> Agenda</button>
