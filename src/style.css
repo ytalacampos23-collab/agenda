@@ -281,6 +281,12 @@
 .rich-notes-editor:focus{border-color:#6c9b83;box-shadow:0 0 0 3px rgba(75,132,99,.12)}
 .rich-notes-editor:empty:before{content:attr(data-placeholder);color:#91a098;pointer-events:none}
 .rich-notes-editor mark{background:#fff176;color:#263b32;padding:0 .08em;border-radius:2px}
+.rich-notes-editor h2{margin:13px 0 7px;color:#294b40;font-size:16px;font-weight:800;line-height:1.35}
+.rich-notes-editor h3{margin:10px 0 5px;color:#38594d;font-size:14px;font-weight:750;line-height:1.4}
+.rich-notes-editor ul,.rich-notes-editor ol{margin:7px 0;padding-left:25px}
+.rich-notes-editor li{margin:4px 0;padding-left:2px}
+.rich-notes-editor blockquote{margin:9px 0;padding:8px 12px;border-left:3px solid #8eaf9b;background:#f5f9f6;color:#536c60}
+.rich-notes-editor [contenteditable="true"]{outline:none}
 
 .meeting-form{padding-top:4px}
 .meeting-list{display:grid;gap:12px}
