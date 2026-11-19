@@ -163,6 +163,7 @@ export default function App() {
   const [meetingDate, setMeetingDate] = useState(today())
   const [meetingTime, setMeetingTime] = useState('')
   const [meetingPriority, setMeetingPriority] = useState<Priority>('Média')
+  const [meetingStatus, setMeetingStatus] = useState<TaskStatus>('A fazer')
   const [meetingNotes, setMeetingNotes] = useState('')
   const [editingMeetingId, setEditingMeetingId] = useState<string | null>(null)
   const [visits, setVisits] = useState<Visit[]>([])
@@ -601,7 +602,7 @@ export default function App() {
       category: 'Reunião',
       due_date: meetingDate,
       due_time: meetingTime || null,
-      status: existing?.status ?? 'A fazer',
+      status: meetingStatus,
       priority: meetingPriority,
       assigned_to: null,
       show_on_calendar: true,
@@ -609,12 +610,12 @@ export default function App() {
     }
     const next = [...tasks.filter(item => item.id !== meeting.id), meeting].sort((a,b) => a.due_date.localeCompare(b.due_date) || (a.due_time ?? '').localeCompare(b.due_time ?? ''))
     setTasks(next); saveTaskCache(userId, next); queueChange(meeting)
-    setMeetingTitle(''); setMeetingDate(today()); setMeetingTime(''); setMeetingPriority('Média'); setMeetingNotes(''); setEditingMeetingId(null); setMeetingFormOpen(false)
+    setMeetingTitle(''); setMeetingDate(today()); setMeetingTime(''); setMeetingPriority('Média'); setMeetingStatus('A fazer'); setMeetingNotes(''); setEditingMeetingId(null); setMeetingFormOpen(false)
     setNotice(isOnline ? (existing ? 'Reunião atualizada e enviada para sincronização.' : 'Reunião cadastrada e enviada para sincronização.') : 'Reunião salva neste dispositivo. Será sincronizada quando a internet voltar.')
   }
 
   function editMeeting(meeting: Task) {
-    setEditingMeetingId(meeting.id); setMeetingTitle(meeting.title); setMeetingDate(meeting.due_date); setMeetingTime(meeting.due_time ?? ''); setMeetingPriority(meeting.priority); setMeetingNotes(meeting.description ?? ''); setMeetingFormOpen(true)
+    setEditingMeetingId(meeting.id); setMeetingTitle(meeting.title); setMeetingDate(meeting.due_date); setMeetingTime(meeting.due_time ?? ''); setMeetingPriority(meeting.priority); setMeetingStatus(meeting.status); setMeetingNotes(meeting.description ?? ''); setMeetingFormOpen(true)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -1039,13 +1040,14 @@ export default function App() {
               <label>Data<input type="date" required value={meetingDate} onChange={e => setMeetingDate(e.target.value)}/></label>
               <label>Horário<input type="time" value={meetingTime} onChange={e => setMeetingTime(e.target.value)}/></label>
               <div className="wide notes-field"><span className="notes-field-title">Observações</span><div className="notes-toolbar"><button type="button" className="format-button" onMouseDown={e => e.preventDefault()} onClick={() => applyBoldToNotes(meetingNotesRef, meetingNotes, setMeetingNotes)}><strong>B</strong> Negrito</button><button type="button" className="format-button highlight-format" onMouseDown={e => e.preventDefault()} onClick={() => applyHighlightToNotes(meetingNotesRef, meetingNotes, setMeetingNotes)}>Marca-texto</button><button type="button" className="format-button" title="Título" onMouseDown={e => e.preventDefault()} onClick={() => applyStructureToNotes(meetingNotesRef, 'formatBlock', 'h2', setMeetingNotes)}>Título</button><button type="button" className="format-button" title="Subtítulo" onMouseDown={e => e.preventDefault()} onClick={() => applyStructureToNotes(meetingNotesRef, 'formatBlock', 'h3', setMeetingNotes)}>Subtítulo</button><button type="button" className="format-button" title="Lista com marcadores" onMouseDown={e => e.preventDefault()} onClick={() => applyStructureToNotes(meetingNotesRef, 'insertUnorderedList', undefined, setMeetingNotes)}>• Lista</button><button type="button" className="format-button" title="Lista numerada" onMouseDown={e => e.preventDefault()} onClick={() => applyStructureToNotes(meetingNotesRef, 'insertOrderedList', undefined, setMeetingNotes)}>1. Lista</button><small>Enter cria uma nova linha. Use os botões para organizar títulos e listas.</small></div><RichNotesEditor editorRef={meetingNotesRef} value={meetingNotes} onChange={setMeetingNotes} placeholder="Anote pautas, decisões, participantes e informações importantes..."/></div>
-              <div className="wide form-action"><button className="primary-button" type="submit"><Plus size={17}/>{editingMeetingId ? 'Salvar alterações' : 'Salvar reunião'}</button>{editingMeetingId && <button type="button" className="secondary-button" onClick={() => {setEditingMeetingId(null);setMeetingTitle('');setMeetingDate(today());setMeetingTime('');setMeetingNotes('');setMeetingFormOpen(false)}}>Cancelar edição</button>}</div>
+              <div className="wide form-action"><button className="primary-button" type="submit"><Plus size={17}/>{editingMeetingId ? 'Salvar alterações' : 'Salvar reunião'}</button>{editingMeetingId && <button type="button" className="secondary-button" onClick={() => {setEditingMeetingId(null);setMeetingTitle('');setMeetingDate(today());setMeetingTime('');setMeetingPriority('Média');setMeetingStatus('A fazer');setMeetingNotes('');setMeetingFormOpen(false)}}>Cancelar edição</button>}</div>
             </form>}
           </section>
           <section className="panel">
             <div className="panel-heading list-heading"><div><h2>Reuniões e agendamentos</h2><p>Organizados por data e horário.</p></div><span className="soft-tag">{tasks.filter(item => item.category === 'Reunião').length} REGISTRO(S)</span></div>
             {tasks.filter(item => item.category === 'Reunião').length === 0 ? <div className="empty"><CalendarClock size={28}/><strong>Nenhuma reunião cadastrada</strong><span>Adicione sua primeira reunião ou compromisso no formulário acima.</span></div> : <div className="meeting-list">{tasks.filter(item => item.category === 'Reunião').slice().sort((a,b) => a.due_date.localeCompare(b.due_date) || (a.due_time ?? '').localeCompare(b.due_time ?? '')).map(meeting => <article className="meeting-card" key={meeting.id}>
               <div className="meeting-card-title"><div className="meeting-item-title"><button type="button" className="library-message-toggle" aria-expanded={expandedMeetingId === meeting.id} onClick={() => setExpandedMeetingId(expandedMeetingId === meeting.id ? null : meeting.id)}>{meeting.title}<span>{expandedMeetingId === meeting.id ? 'Ocultar mensagem' : 'Ver mensagem'}</span></button></div><div className="meeting-actions"><button type="button" className="icon-button" title="Editar reunião" onClick={() => editMeeting(meeting)}><Pencil size={15}/></button><button type="button" className="icon-button danger-icon" title="Excluir reunião" onClick={() => deleteTask(meeting.id)}><Trash2 size={15}/></button></div></div>
+              <div className="meeting-status-control"><label>Status</label><select className="status-select" value={meeting.status} onChange={e => changeStatus(meeting.id, e.target.value as TaskStatus)}><option>A fazer</option><option>Em andamento</option><option>Concluído</option></select></div>
               {expandedMeetingId === meeting.id && <>
                 <div className="meeting-date"><CalendarDays size={15}/>{new Date(meeting.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}{meeting.due_time ? <><span>·</span><Clock3 size={14}/>{meeting.due_time.slice(0,5)}</> : <span>· Horário não definido</span>}</div>
                 {meeting.description && <div className="meeting-notes rich-notes-display" dangerouslySetInnerHTML={{__html:safeRichHtml(meeting.description)}}/>}
