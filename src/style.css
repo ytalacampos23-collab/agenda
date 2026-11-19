@@ -312,3 +312,6 @@
 .agenda-notes-panel .library-hero{margin-bottom:2px}
 .agenda-notes-toolbar{margin-top:18px}
 .agenda-notes-panel .library-item:has(.library-message-toggle){padding-top:13px;padding-bottom:13px}
+
+.notes-field-title{display:block;margin-bottom:7px;color:#637975;font-size:11px;font-weight:650}
+.rich-notes-editor{position:relative;z-index:1;display:block;pointer-events:auto;cursor:text;user-select:text;-webkit-user-select:text}
