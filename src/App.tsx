@@ -851,11 +851,13 @@ export default function App() {
     try {
       const loadWorkbook = async (file: File, label: string) => {
         const workbook = new ExcelJS.Workbook()
-        const bytes = new Uint8Array(await file.arrayBuffer())
         try {
-          await workbook.xlsx.load(bytes)
-        } catch {
-          throw new Error('Não foi possível abrir a planilha de ' + label + '. Confira se o arquivo é um Excel .xlsx válido e tente novamente.')
+          // O ExcelJS já recebe ArrayBuffer diretamente no fluxo de auditoria de faturas.
+          // Mantém o mesmo formato de entrada para evitar falhas na conversão intermediária.
+          await workbook.xlsx.load(await file.arrayBuffer())
+        } catch (cause) {
+          console.error('Falha ao carregar planilha de ' + label, cause)
+          throw new Error('Não foi possível ler o conteúdo da planilha de ' + label + '. O arquivo enviado é um .xlsx válido; tente novamente após atualizar a página. Se persistir, verificaremos o detalhe técnico do erro.')
         }
         if (!workbook.worksheets || workbook.worksheets.length === 0) {
           throw new Error('A planilha de ' + label + ' não contém abas de dados reconhecidas.')
