@@ -762,12 +762,23 @@ export default function App() {
     if (file.size === 0 || file.size > 10 * 1024 * 1024) { setError('O arquivo está vazio ou ultrapassa o limite de 10 MB.'); return }
     setAuditBusy(true)
     try {
+      // Usa o mesmo leitor XLSX baseado em ZIP/XML da auditoria de contratos.
+      // Isso evita a falha do ExcelJS ao interpretar arquivos cuja estrutura interna varia.
+      const parsedSheets = await readXlsxSheets(file)
+      if (parsedSheets.length > 30) throw new Error('A planilha possui mais de 30 abas. Reduza o arquivo e tente novamente por segurança.')
       const workbook = new ExcelJS.Workbook()
-      await workbook.xlsx.load(await file.arrayBuffer())
-      if (workbook.worksheets.length > 30) throw new Error('A planilha possui mais de 30 abas. Reduza o arquivo e tente novamente por segurança.')
-      for (const sheet of workbook.worksheets) {
-        if (sheet.rowCount > 100000) throw new Error('A aba "' + sheet.name + '" possui mais de 100 mil linhas. Reduza o arquivo para evitar uso excessivo de memória.')
-        if (sheet.columnCount > 500) throw new Error('A aba "' + sheet.name + '" possui mais de 500 colunas. Confira a estrutura do arquivo antes de continuar.')
+      const worksheetByName = new Map<string, ExcelJS.Worksheet>()
+      for (const parsed of parsedSheets) {
+        if (parsed.rows.length > 100000) throw new Error('A aba "' + parsed.name + '" possui mais de 100 mil linhas. Reduza o arquivo para evitar uso excessivo de memória.')
+        const worksheet = workbook.addWorksheet(parsed.name.slice(0, 31))
+        worksheetByName.set(parsed.name, worksheet)
+        for (const parsedRow of parsed.rows) {
+          const maxColumn = Math.max(0, ...parsedRow.cells.keys())
+          if (maxColumn > 500) throw new Error('A aba "' + parsed.name + '" possui mais de 500 colunas. Confira a estrutura do arquivo antes de continuar.')
+          const values: string[] = Array(maxColumn).fill('')
+          for (const [column, value] of parsedRow.cells) values[column - 1] = value
+          worksheet.getRow(parsedRow.number).values = [undefined, ...values]
+        }
       }
       let target: { worksheet: ExcelJS.Worksheet; headerRow: number; installationCol: number; ucCol: number; referenceCol: number; clientCol: number } | null = null
       for (const worksheet of workbook.worksheets) {
@@ -796,15 +807,13 @@ export default function App() {
       const clientsByPair = new Map<string, Set<string>>()
       worksheet.eachRow((row, rowNumber) => {
         if (rowNumber <= headerRow) return
-        const rawInstallation = auditCellValue(row.getCell(installationCol))
-        const installation = String(rawInstallation ?? '').replace(/\\.0$/, '').replace(/[^\\dA-Za-z]/g, '')
-        const rawUc = auditCellValue(row.getCell(ucCol))
-        const uc = String(rawUc ?? '').replace(/\\.0$/, '').replace(/[^\\dA-Za-z]/g, '')
+        const installation = String(auditCellValue(row.getCell(installationCol)) ?? '').replace(/\\.0$/, '').replace(/[^\\dA-Za-z]/g, '')
+        const uc = String(auditCellValue(row.getCell(ucCol)) ?? '').replace(/\\.0$/, '').replace(/[^\\dA-Za-z]/g, '')
         if (!installation || !uc) return
-        const month = parseAuditMonth(auditCellValue(row.getCell(referenceCol)) ?? row.getCell(referenceCol).text)
+        const rawMonth = auditCellValue(row.getCell(referenceCol))
+        const month = parseAuditMonth(typeof rawMonth === 'string' && /^\\d+(?:\\.\\d+)?$/.test(rawMonth.trim()) ? Number(rawMonth) : rawMonth)
         if (month === null) { invalidRows++; return }
-        const rawClient = clientCol ? auditCellValue(row.getCell(clientCol)) : ''
-        const client = String(rawClient ?? '').trim()
+        const client = String(clientCol ? auditCellValue(row.getCell(clientCol)) ?? '' : '').trim()
         records.push({ rowNumber, installation, uc, client, month })
         monthsFound.add(month)
         const pairKey = installation + '|' + uc
@@ -832,11 +841,8 @@ export default function App() {
       const missing: Array<{ installation: string; uc: string; client: string }> = []
       for (const [pairKey, references] of byPair) {
         const [installation, uc] = pairKey.split('|')
-        // Current-month invoices are orange; recent historical pairs missing the latest reference are yellow.
         if (references.has(latest)) marked.add(pairKey)
-        else if (references.has(previousOne) || references.has(previousTwo)) {
-          missing.push({ installation, uc, client: clientByPair.get(pairKey) || 'Nome não informado' })
-        }
+        else if (references.has(previousOne) || references.has(previousTwo)) missing.push({ installation, uc, client: clientByPair.get(pairKey) || 'Nome não informado' })
       }
       const warnings: string[] = []
       if (monthsFound.size > 3) warnings.push('Foram encontrados ' + monthsFound.size + ' meses de referência. A comparação utilizou somente os três mais recentes; os meses anteriores foram ignorados.')
@@ -852,13 +858,12 @@ export default function App() {
         const pairKey = record.installation + '|' + record.uc
         const fill = marked.has(pairKey) ? orangeFill : missingPairs.has(pairKey) ? yellowFill : null
         if (!fill) continue
-        const row = worksheet.getRow(record.rowNumber)
-        row.eachCell({ includeEmpty: true }, cell => { cell.fill = fill })
+        worksheet.getRow(record.rowNumber).eachCell({ includeEmpty: true }, cell => { cell.fill = fill })
       }
       auditWorkbookRef.current = workbook
       auditFileNameRef.current = file.name
       setAuditResult({ fileName: file.name, months: latestMonths.map(auditMonthLabel), markedCount: marked.size, missing: missing.sort((a, b) => a.installation.localeCompare(b.installation, 'pt-BR') || a.uc.localeCompare(b.uc, 'pt-BR')), rowCount: records.length, uniqueInstallations: new Set(records.map(record => record.installation)).size, uniquePairs: byPair.size, invalidRows, duplicateInstallationMonths, warnings })
-      setNotice('Auditoria concluída usando a combinação número de instalação + unidade consumidora. O arquivo foi processado somente neste dispositivo; ele não foi enviado ao servidor.')
+      setNotice('Auditoria concluída usando instalação + unidade consumidora. O arquivo foi processado localmente neste dispositivo.')
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'Não foi possível ler a planilha.'
       setError(message)
@@ -866,6 +871,7 @@ export default function App() {
       setAuditBusy(false)
     }
   }
+
   async function downloadAuditedWorkbook() {
     if (!auditWorkbookRef.current || !auditFileNameRef.current) return
     try {
