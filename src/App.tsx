@@ -278,7 +278,6 @@ export default function App() {
   const [contractListFile, setContractListFile] = useState<File|null>(null)
   const [invoiceListFile, setInvoiceListFile] = useState<File|null>(null)
   const [contractAuditResult, setContractAuditResult] = useState<{fileNames:string[];total:number;matched:number;missing:Array<{client:string;installation:string;uc:string}>;warnings:string[]}|null>(null)
-  const contractAuditInputRef = useRef<HTMLInputElement|null>(null)
   const [auditResult, setAuditResult] = useState<{ fileName: string; months: string[]; markedCount: number; missing: Array<{ installation: string; client: string }>; rowCount: number; uniqueInstallations: number; invalidRows: number; duplicateInstallationMonths: number; warnings: string[] } | null>(null)
   const auditWorkbookRef = useRef<ExcelJS.Workbook | null>(null)
   const auditFileNameRef = useRef('')
