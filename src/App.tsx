@@ -290,7 +290,7 @@ export default function App() {
   const [invoiceListFile, setInvoiceListFile] = useState<File|null>(null)
   const [contractAuditResult, setContractAuditResult] = useState<{fileNames:string[];total:number;matched:number;missing:Array<{client:string;installation:string;uc:string}>;warnings:string[]}|null>(null)
   const [auditResult, setAuditResult] = useState<{ fileName: string; months: string[]; markedCount: number; missing: Array<{ installation: string; uc: string; client: string }>; rowCount: number; uniqueInstallations: number; uniquePairs: number; invalidRows: number; duplicateInstallationMonths: number; warnings: string[] } | null>(null)
-  const auditWorkbookRef = useRef<ExcelJS.Workbook | null>(null)
+  const auditWorkbookBlobRef = useRef<Blob | null>(null)
   const auditFileNameRef = useRef('')
 
   useEffect(() => {
@@ -757,7 +757,7 @@ export default function App() {
 
   async function auditInvoices(file?: File) {
     if (!file) return
-    setError(''); setNotice(''); setAuditResult(null); auditWorkbookRef.current = null
+    setError(''); setNotice(''); setAuditResult(null); auditWorkbookBlobRef.current = null
     if (!file.name.toLowerCase().endsWith('.xlsx')) { setError('Envie uma planilha no formato .xlsx. Arquivos .xls, .xlsm, CSV e outros formatos não são aceitos nesta primeira versão.'); return }
     if (file.size === 0 || file.size > 10 * 1024 * 1024) { setError('O arquivo está vazio ou ultrapassa o limite de 10 MB.'); return }
     setAuditBusy(true)
@@ -864,16 +864,16 @@ export default function App() {
       const conflictingClients = [...clientsByPair.values()].filter(names => names.size > 1).length
       if (conflictingClients > 0) warnings.push(conflictingClients + ' combinação(ões) instalação + UC aparecem associadas a mais de um nome de cliente.')
       if (records.length > 50000) warnings.push('Arquivo grande: foram processados mais de 50 mil registros. Confira se o resultado corresponde ao esperado.')
-      const orangeFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFD08A' } }
-      const yellowFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } }
       const missingPairs = new Set(missing.map(item => item.installation + '|' + item.uc))
+      const rowColors = new Map<number, 'orange' | 'yellow'>()
       for (const record of records) {
         const pairKey = record.installation + '|' + record.uc
-        const fill = marked.has(pairKey) ? orangeFill : missingPairs.has(pairKey) ? yellowFill : null
-        if (!fill) continue
-        worksheet.getRow(record.rowNumber).eachCell({ includeEmpty: true }, cell => { cell.fill = fill })
+        if (marked.has(pairKey)) rowColors.set(record.rowNumber, 'orange')
+        else if (missingPairs.has(pairKey)) rowColors.set(record.rowNumber, 'yellow')
       }
-      auditWorkbookRef.current = workbook
+      // A exportação altera apenas os estilos das células existentes no XLSX original.
+      // Nenhuma aba, fórmula, dimensão, filtro ou valor é reconstruído.
+      auditWorkbookBlobRef.current = await buildAuditedXlsx(file, worksheet.name, rowColors)
       auditFileNameRef.current = file.name
       setAuditResult({ fileName: file.name, months: latestMonths.map(auditMonthLabel), markedCount: marked.size, missing: missing.sort((a, b) => a.installation.localeCompare(b.installation, 'pt-BR') || a.uc.localeCompare(b.uc, 'pt-BR')), rowCount: records.length, uniqueInstallations: new Set(records.map(record => record.installation)).size, uniquePairs: byPair.size, invalidRows, duplicateInstallationMonths, warnings })
       setNotice('Auditoria concluída usando instalação + unidade consumidora. O arquivo foi processado localmente neste dispositivo.')
@@ -886,24 +886,22 @@ export default function App() {
   }
 
   async function downloadAuditedWorkbook() {
-    if (!auditWorkbookRef.current || !auditFileNameRef.current) return
+    if (!auditWorkbookBlobRef.current || !auditFileNameRef.current) return
     try {
-      const output = await auditWorkbookRef.current.xlsx.writeBuffer()
-      const blob = new Blob([output as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      const url = URL.createObjectURL(blob)
+      const url = URL.createObjectURL(auditWorkbookBlobRef.current)
       const link = document.createElement('a')
       link.href = url
       link.download = auditFileNameRef.current.replace(/\.xlsx$/i, '') + '_auditada.xlsx'
       link.click()
       window.setTimeout(() => URL.revokeObjectURL(url), 1000)
-      setNotice('Planilha auditada preparada para download.')
+      setNotice('Cópia auditada gerada a partir do XLSX original, com a estrutura preservada.')
     } catch {
       setError('Não foi possível gerar a cópia auditada. Tente anexar a planilha novamente.')
     }
   }
 
   function clearAudit() {
-    auditWorkbookRef.current = null
+    auditWorkbookBlobRef.current = null;
     auditFileNameRef.current = ''
     setAuditResult(null)
     setError('')
@@ -995,6 +993,88 @@ export default function App() {
     if (!sheets.length) throw new Error('O arquivo não contém abas de dados reconhecidas.')
     return sheets
   }
+  async function buildAuditedXlsx(file: File, targetSheetName: string, rowColors: Map<number, 'orange' | 'yellow'>): Promise<Blob> {
+    const zip = await JSZip.loadAsync(await file.arrayBuffer())
+    const readXml = async (path: string) => {
+      const entry = zip.file(path)
+      if (!entry) throw new Error('Não foi possível preservar a planilha: componente ausente (' + path + ').')
+      const xml = await entry.async('string')
+      const doc = new DOMParser().parseFromString(xml, 'application/xml')
+      if (doc.getElementsByTagName('parsererror').length) throw new Error('Não foi possível preservar o XML original de ' + path + '.')
+      return doc
+    }
+    const workbookDoc = await readXml('xl/workbook.xml')
+    const relsDoc = await readXml('xl/_rels/workbook.xml.rels')
+    const rels = new Map<string, string>()
+    for (const rel of Array.from(relsDoc.getElementsByTagNameNS('*', 'Relationship'))) {
+      const id = rel.getAttribute('Id'), target = rel.getAttribute('Target')
+      if (id && target) rels.set(id, resolveXlsxTarget('xl/workbook.xml', target))
+    }
+    let sheetPath = ''
+    for (const sheet of Array.from(workbookDoc.getElementsByTagNameNS('*', 'sheet'))) {
+      if (sheet.getAttribute('name') !== targetSheetName) continue
+      const id = sheet.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id') || sheet.getAttribute('r:id') || ''
+      sheetPath = rels.get(id) || ''
+      break
+    }
+    if (!sheetPath) throw new Error('Não foi possível localizar a aba original que será marcada.')
+    const sheetDoc = await readXml(sheetPath)
+    const stylesDoc = await readXml('xl/styles.xml')
+    const fills = stylesDoc.getElementsByTagNameNS('*', 'fills')[0]
+    const cellXfs = stylesDoc.getElementsByTagNameNS('*', 'cellXfs')[0]
+    if (!fills || !cellXfs) throw new Error('A estrutura de estilos do XLSX não é compatível com a marcação segura.')
+    const ns = stylesDoc.documentElement.namespaceURI || 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+    const make = (name: string) => stylesDoc.createElementNS(ns, name)
+    const fillIds: Record<'orange' | 'yellow', number> = {
+      orange: fills.children.length,
+      yellow: fills.children.length + 1
+    }
+    const addFill = (rgb: string) => {
+      const fill = make('fill'), pattern = make('patternFill')
+      pattern.setAttribute('patternType', 'solid')
+      const fg = make('fgColor'); fg.setAttribute('rgb', rgb)
+      const bg = make('bgColor'); bg.setAttribute('indexed', '64')
+      pattern.appendChild(fg); pattern.appendChild(bg); fill.appendChild(pattern); fills.appendChild(fill)
+    }
+    addFill('FFFFD08A'); addFill('FFFFFF00')
+    const styleMap = new Map<string, number>()
+    const styleFor = (baseStyle: number, color: 'orange' | 'yellow') => {
+      const key = baseStyle + ':' + color
+      const cached = styleMap.get(key)
+      if (cached !== undefined) return cached
+      const base = cellXfs.children[baseStyle] || cellXfs.children[0]
+      if (!base) throw new Error('Não foi possível identificar o estilo-base das células.')
+      const xf = base.cloneNode(true) as Element
+      xf.setAttribute('fillId', String(fillIds[color]))
+      xf.setAttribute('applyFill', '1')
+      const index = cellXfs.children.length
+      cellXfs.appendChild(xf)
+      styleMap.set(key, index)
+      return index
+    }
+    const sheetData = sheetDoc.getElementsByTagNameNS('*', 'sheetData')[0]
+    if (!sheetData) throw new Error('A aba original não contém uma área de dados reconhecida.')
+    let changedCells = 0
+    for (const row of Array.from(sheetData.getElementsByTagNameNS('*', 'row'))) {
+      const rowNumber = Number(row.getAttribute('r'))
+      const color = rowColors.get(rowNumber)
+      if (!color) continue
+      for (const cell of Array.from(row.getElementsByTagNameNS('*', 'c'))) {
+        const baseStyle = Number(cell.getAttribute('s') || '0')
+        cell.setAttribute('s', String(styleFor(Number.isFinite(baseStyle) ? baseStyle : 0, color)))
+        changedCells++
+      }
+    }
+    if (!changedCells) throw new Error('Nenhuma célula existente foi encontrada nas linhas que deveriam receber marcação. O arquivo original foi mantido.')
+    fills.setAttribute('count', String(fills.children.length))
+    cellXfs.setAttribute('count', String(cellXfs.children.length))
+    const serializer = new XMLSerializer()
+    zip.file(sheetPath, serializer.serializeToString(sheetDoc))
+    zip.file('xl/styles.xml', serializer.serializeToString(stylesDoc))
+    const output = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', compression: 'DEFLATE', compressionOptions: { level: 6 } })
+    return output
+  }
+
   async function auditContracts(contractFile?: File, invoiceFile?: File) {
     if (!contractFile || !invoiceFile) return
     setError(''); setNotice(''); setContractAuditResult(null); setContractAuditBusy(true)
