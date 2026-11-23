@@ -1078,7 +1078,11 @@ export default function App() {
           const number = Number(rowNode.getAttribute('r')) || 0
           if (number <= headerNumber) continue
           if (normalizeAuditText(getValue(rowNode, statusCol)) !== 'ativo') { sheetData.removeChild(rowNode); continue }
-          const key = normalizeContractAuditKey(getValue(rowNode, installationCol)) + '|' + normalizeContractAuditKey(getValue(rowNode, ucCol))
+          const installation = normalizeContractAuditKey(getValue(rowNode, installationCol))
+          const uc = normalizeContractAuditKey(getValue(rowNode, ucCol))
+          // Exclude empty/incomplete records that can appear as blank formatted rows in the source workbook.
+          if (!installation || !uc) { sheetData.removeChild(rowNode); continue }
+          const key = installation + '|' + uc
           if (!missingKeys.has(key)) sheetData.removeChild(rowNode)
         }
         targetPath = sheetPath
