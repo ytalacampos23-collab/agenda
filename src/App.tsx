@@ -273,6 +273,12 @@ export default function App() {
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [auditBusy, setAuditBusy] = useState(false)
+  const [auditTab, setAuditTab] = useState<'invoices' | 'contracts'>('invoices')
+  const [contractAuditBusy, setContractAuditBusy] = useState(false)
+  const [contractListFile, setContractListFile] = useState<File|null>(null)
+  const [invoiceListFile, setInvoiceListFile] = useState<File|null>(null)
+  const [contractAuditResult, setContractAuditResult] = useState<{fileNames:string[];total:number;matched:number;missing:Array<{client:string;installation:string;uc:string}>;warnings:string[]}|null>(null)
+  const contractAuditInputRef = useRef<HTMLInputElement|null>(null)
   const [auditResult, setAuditResult] = useState<{ fileName: string; months: string[]; markedCount: number; missing: Array<{ installation: string; client: string }>; rowCount: number; uniqueInstallations: number; invalidRows: number; duplicateInstallationMonths: number; warnings: string[] } | null>(null)
   const auditWorkbookRef = useRef<ExcelJS.Workbook | null>(null)
   const auditFileNameRef = useRef('')
@@ -837,6 +843,40 @@ export default function App() {
     setError('')
     setNotice('')
   }
+  const normalizeContractAuditKey = (value: unknown) => String(value ?? '').replace(/\\.0$/, '').replace(/[^\\dA-Za-z]/g, '').trim()
+  async function auditContracts(contractFile?: File, invoiceFile?: File) {
+    if (!contractFile || !invoiceFile) return
+    setError(''); setNotice(''); setContractAuditResult(null); setContractAuditBusy(true)
+    const validFile = (file: File) => file.name.toLowerCase().endsWith('.xlsx') && file.size > 0 && file.size <= 10 * 1024 * 1024
+    if (!validFile(contractFile) || !validFile(invoiceFile)) { setError('Envie duas planilhas .xlsx válidas, com até 10 MB cada.'); setContractAuditBusy(false); return }
+    try {
+      const [contractsWb, invoicesWb] = await Promise.all([new ExcelJS.Workbook(), new ExcelJS.Workbook()])
+      await Promise.all([contractsWb.xlsx.load(await contractFile.arrayBuffer()), invoicesWb.xlsx.load(await invoiceFile.arrayBuffer())])
+      const findHeaders = (sheet: ExcelJS.Worksheet, expected: string[]) => {
+        for (let r=1;r<=Math.min(sheet.rowCount,20);r++) {
+          const map = new Map<string,number>(); sheet.getRow(r).eachCell((cell,col)=>map.set(normalizeAuditText(auditCellValue(cell)),col))
+          if (expected.every(h=>map.has(normalizeAuditText(h)))) return {row:r,map}
+        }
+        return null
+      }
+      const contractSheet = contractsWb.worksheets[0], invoiceSheet = invoicesWb.worksheets[0]
+      if (!contractSheet || !invoiceSheet) throw new Error('Uma das planilhas está sem abas de dados.')
+      const contractHead=findHeaders(contractSheet,['Número instalação','Nº unidade consumidora','Titular conta','Situação Contrato'])
+      const invoiceHead=findHeaders(invoiceSheet,['Instalação','Unid. Consumidora','Geração de Faturas','Status da Fatura','Status de Boleto Gerado'])
+      if (!contractHead) throw new Error('Não localizei na planilha de contratos as colunas Número instalação, Nº unidade consumidora, Titular conta e Situação Contrato.')
+      if (!invoiceHead) throw new Error('Não localizei na planilha de faturas as colunas Instalação, Unid. Consumidora, Geração de Faturas, Status da Fatura e Status de Boleto Gerado.')
+      const cMap=contractHead.map, iMap=invoiceHead.map
+      const activeContracts=new Map<string,{client:string;installation:string;uc:string}>(); let duplicates=0, skipped=0
+      contractSheet.eachRow((row,r)=>{if(r<=contractHead.row)return;const situation=normalizeAuditText(auditCellValue(row.getCell(cMap.get('situacao contrato')!)));if(situation!=='ativo')return;const inst=normalizeContractAuditKey(auditCellValue(row.getCell(cMap.get('numero instalacao')!))),uc=normalizeContractAuditKey(auditCellValue(row.getCell(cMap.get('no unidade consumidora')!))),client=String(auditCellValue(row.getCell(cMap.get('titular conta')!))??'').trim();if(!inst||!uc){skipped++;return}const key=inst+'|'+uc;if(activeContracts.has(key))duplicates++;else activeContracts.set(key,{client,installation:inst,uc})})
+      const billed=new Set<string>(); let ignoredInvoiceRows=0
+      invoiceSheet.eachRow((row,r)=>{if(r<=invoiceHead.row)return;const inst=normalizeContractAuditKey(auditCellValue(row.getCell(iMap.get('instalacao')!))),uc=normalizeContractAuditKey(auditCellValue(row.getCell(iMap.get('unid consumidora')!)));if(!inst||!uc)return;const generation=normalizeAuditText(auditCellValue(row.getCell(iMap.get('geracao de faturas')!))),invoiceStatus=normalizeAuditText(auditCellValue(row.getCell(iMap.get('status da fatura')!))),boletoStatus=normalizeAuditText(auditCellValue(row.getCell(iMap.get('status de boleto gerado')!)));if(invoiceStatus.includes('cancelado')||generation!=='ativo'||boletoStatus!=='sucesso'){ignoredInvoiceRows++;return}billed.add(inst+'|'+uc)})
+      const missing=[...activeContracts.entries()].filter(([key])=>!billed.has(key)).map(([,value])=>value).sort((x,y)=>x.client.localeCompare(y.client,'pt-BR'))
+      const warnings:string[]=[];if(duplicates)warnings.push(duplicates+' contrato(s) ativo(s) duplicado(s) pela combinação instalação + UC foram consolidados.');if(skipped)warnings.push(skipped+' contrato(s) ativo(s) sem instalação ou UC foram ignorados.');if(ignoredInvoiceRows)warnings.push(ignoredInvoiceRows+' linha(s) de faturas sem geração ativa, boleto com sucesso ou com status cancelado não foram consideradas como faturamento válido.')
+      setContractAuditResult({fileNames:[contractFile.name,invoiceFile.name],total:activeContracts.size,matched:activeContracts.size-missing.length,missing,warnings});setNotice('Comparativo concluído localmente. Os arquivos não foram enviados ao servidor.')
+    } catch(err){setError(err instanceof Error?err.message:'Falha ao comparar as planilhas.')} finally{setContractAuditBusy(false)}
+  }
+  function exportContractAudit() { if(!contractAuditResult)return;const csv=['Cliente;Instalação;Unid. Consumidora',...contractAuditResult.missing.map(x=>[x.client,x.installation,x.uc].map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';'))].join('\\r\\n');const blob=new Blob(['\\ufeff'+csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='contratos_sem_faturas.csv';link.click();window.setTimeout(()=>URL.revokeObjectURL(url),1000) }
+
 
   function exportVisitCsv() {
     const visit = visits.find(item => item.id === selectedVisitId)
@@ -1193,9 +1233,10 @@ export default function App() {
           </section>}
           {section === 'ouvidoria' && <>
             <div className="audit-tabs" role="tablist" aria-label="Funcionalidades de auditoria">
-              <button type="button" role="tab" aria-selected="true" className="audit-tab active"><FileSpreadsheet size={16}/> Fatura não gerada</button>
+              <button type="button" role="tab" aria-selected={auditTab==='invoices'} className={auditTab==='invoices'?'audit-tab active':'audit-tab'} onClick={()=>setAuditTab('invoices')}><FileSpreadsheet size={16}/> Faturas não geradas</button>
+              <button type="button" role="tab" aria-selected={auditTab==='contracts'} className={auditTab==='contracts'?'audit-tab active':'audit-tab'} onClick={()=>setAuditTab('contracts')}><FileSpreadsheet size={16}/> Contratos + Faturas não geradas</button>
             </div>
-            <section className="panel audit-panel">
+            {auditTab==='invoices' && <section className="panel audit-panel">
               <div className="panel-heading"><div><h2>Fatura não gerada</h2><p>Anexe a planilha de faturamento para comparar automaticamente as três referências mais recentes.</p></div><span className="soft-tag">AUDITORIA POR INSTALAÇÃO</span></div>
               <div className="audit-security-note"><ShieldCheck size={18}/><span><strong>Processamento protegido</strong>O arquivo é lido e auditado no seu próprio navegador. Ele não é enviado ao Watt-Wise, ao Supabase nem armazenado na conta.</span></div>
               <label className="audit-upload" htmlFor="audit-spreadsheet"><Upload size={22}/><strong>{auditBusy ? 'Analisando planilha...' : 'Selecionar planilha Excel'}</strong><span>Formato .xlsx · até 10 MB</span><input id="audit-spreadsheet" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={auditBusy} onChange={e => { const file = e.target.files?.[0]; if (file) void auditInvoices(file); e.currentTarget.value = '' }}/></label>
@@ -1217,7 +1258,19 @@ export default function App() {
                 </div>
                 <p className="audit-footnote">A marcação laranja é aplicada à linha inteira de todas as ocorrências da instalação quando ela aparece nas três referências. As instalações presentes nos dois meses anteriores, mas ausentes no mês mais recente, ficam sem a marcação.</p>
               </>}
-            </section>
+            </section>}
+            {auditTab==='contracts' && <section className="panel audit-panel contract-audit-panel">
+              <div className="panel-heading"><div><h2>Contratos + Faturas não geradas</h2><p>Anexe a base de contratos e a exportação de faturas para identificar contratos ativos sem fatura emitida.</p></div><span className="soft-tag">CRUZAMENTO INSTALAÇÃO + UC</span></div>
+              <div className="audit-security-note"><ShieldCheck size={18}/><span><strong>Processamento protegido</strong>As duas planilhas são comparadas no navegador e não são enviadas nem armazenadas no servidor.</span></div>
+              <div className="contract-audit-upload-grid"><label className="audit-upload" htmlFor="contract-list-upload"><Upload size={22}/><strong>Selecionar planilha de contratos</strong><span>.xlsx até 10 MB</span><input id="contract-list-upload" type="file" accept=".xlsx" onChange={e=>{setContractAuditResult(null);setContractListFile(e.currentTarget.files?.[0]??null);e.currentTarget.value=''}}/></label><label className="audit-upload" htmlFor="invoice-list-upload"><Upload size={22}/><strong>Selecionar planilha de faturas</strong><span>.xlsx até 10 MB</span><input id="invoice-list-upload" type="file" accept=".xlsx" onChange={e=>{setInvoiceListFile(e.currentTarget.files?.[0]??null);e.currentTarget.value=''}}/></label></div>
+              <p className="audit-footnote">A comparação considera somente contratos com <strong>Situação Contrato = Ativo</strong>. A fatura é válida quando a geração está ativa, o status de boleto é “Sucesso” e a fatura não está cancelada. Chave: instalação + unidade consumidora.</p>
+              <button type="button" className="primary-button" disabled={contractAuditBusy} onClick={()=>{void auditContracts(contractListFile??undefined,invoiceListFile??undefined)}}><FileSpreadsheet size={15}/>{contractAuditBusy?'Comparando planilhas...':'Comparar contratos e faturas'}</button>
+              {contractAuditBusy&&<div className="audit-progress"><span className="spin"><LoaderCircle size={17}/></span> Cruzando instalações e unidades consumidoras...</div>}
+              {contractAuditResult&&<><div className="audit-result-heading"><div><strong>Resultado do comparativo</strong><small>{contractAuditResult.fileNames.join(' · ')}</small></div><div className="audit-actions"><button type="button" className="secondary-button" onClick={()=>setContractAuditResult(null)}>Limpar resultado</button><button type="button" className="primary-button" onClick={exportContractAudit}><FileDown size={15}/> Exportar pendências</button></div></div>
+              <div className="audit-summary audit-summary-enhanced"><div><span>Contratos ativos analisados</span><strong>{contractAuditResult.total.toLocaleString('pt-BR')}</strong></div><div><span>Com fatura válida</span><strong>{contractAuditResult.matched.toLocaleString('pt-BR')}</strong></div><div><span>Sem fatura identificada</span><strong>{contractAuditResult.missing.length.toLocaleString('pt-BR')}</strong></div></div>
+              {contractAuditResult.warnings.length>0&&<div className="audit-validation-warnings"><strong><AlertCircle size={16}/> Avisos da comparação</strong><ul>{contractAuditResult.warnings.map((w,i)=><li key={i}>{w}</li>)}</ul></div>}
+              <div className="audit-list-heading"><strong>Contratos sem faturas válidas</strong><span>{contractAuditResult.missing.length} registro(s)</span></div>{contractAuditResult.missing.length===0?<div className="audit-empty">Todos os contratos ativos foram encontrados com faturas válidas.</div>:<div className="audit-table-wrap"><table className="audit-table"><thead><tr><th>Cliente</th><th>Instalação</th><th>Unid. Consumidora</th></tr></thead><tbody>{contractAuditResult.missing.map(item=><tr key={item.installation+'|'+item.uc}><td>{item.client}</td><td>{item.installation}</td><td>{item.uc}</td></tr>)}</tbody></table></div>}</>}
+            </section>}
           </>}
         {section === 'historico' && <section className="panel"><div className="panel-heading"><div><h2>Histórico de movimentações</h2><p>Consulte separadamente as alterações da Minha Agenda e da Visita à Cemig.</p></div><span className="soft-tag">{historyEvents.filter(event => historyFilter === 'agenda' ? event.entity_type === 'Atividade' : event.entity_type === 'Assunto').length} REGISTRO(S)</span></div><div className="history-filters"><button type="button" className={historyFilter === 'agenda' ? 'active' : ''} onClick={() => setHistoryFilter('agenda')}>Minha Agenda</button><button type="button" className={historyFilter === 'visitas' ? 'active' : ''} onClick={() => setHistoryFilter('visitas')}>Visita à Cemig</button></div>{historyEvents.filter(event => historyFilter === 'agenda' ? event.entity_type === 'Atividade' : event.entity_type === 'Assunto').length === 0 ? <div className="empty"><History size={28}/><strong>Nenhuma movimentação encontrada</strong><span>As próximas inclusões e alterações aparecerão aqui após a sincronização.</span></div> : <div className="history-list">{historyEvents.filter(event => historyFilter === 'agenda' ? event.entity_type === 'Atividade' : event.entity_type === 'Assunto').map(event => { const value = event.new_value ?? {}; const old = event.old_value ?? {}; const label = event.event_type === 'created' ? 'Criado' : event.event_type === 'status_changed' ? 'Status alterado' : event.event_type === 'schedule_changed' ? 'Data ou horário alterado' : 'Dados atualizados'; const detail = event.event_type === 'status_changed' ? `${old.status ?? '—'} → ${value.status ?? '—'}` : event.event_type === 'schedule_changed' ? `${old.date ?? '—'} ${old.time ?? ''} → ${value.date ?? '—'} ${value.time ?? ''}` : (value.title ?? old.title ?? 'Registro atualizado'); return <article className="history-item" key={event.id}><span className="history-marker"/><div className="history-copy"><div><strong>{detail}</strong><span className="history-kind">{event.entity_type} · {label}</span></div><time>{new Date(event.created_at).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})}</time></div></article> })}</div>}</section>}
         <footer>Watt-Wise <span>•</span> Em desenvolvimento</footer>
