@@ -139,7 +139,7 @@ const categories = [
 const today = () => { const d = new Date(); return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-') }
 
 export default function App() {
-  const [section, setSection] = useState<'agenda' | 'visitas' | 'ouvidoria' | 'historico'>('agenda')
+  const [section, setSection] = useState<'agenda' | 'visitas' | 'biblioteca' | 'ouvidoria' | 'historico'>('agenda')
   const [visitPageTab, setVisitPageTab] = useState<'visits' | 'library'>('visits')
   const [agendaPageTab, setAgendaPageTab] = useState<'agenda' | 'meetings' | 'notes'>('agenda')
   const [sessionReady, setSessionReady] = useState(false)
@@ -179,6 +179,16 @@ export default function App() {
   const [libraryFormOpen, setLibraryFormOpen] = useState(false)
   const [expandedLibraryMessageId, setExpandedLibraryMessageId] = useState<string | null>(null)
   const [expandedLibraryDocumentId, setExpandedLibraryDocumentId] = useState<string | null>(null)
+  const [generalLibraryItems, setGeneralLibraryItems] = useState<LibraryItem[]>([])
+  const [generalLibraryKind, setGeneralLibraryKind] = useState<'message' | 'documents'>('message')
+  const [generalLibraryTitle, setGeneralLibraryTitle] = useState('')
+  const [generalLibraryContent, setGeneralLibraryContent] = useState('')
+  const [editingGeneralLibraryItem, setEditingGeneralLibraryItem] = useState<string | null>(null)
+  const [generalLibraryBusy, setGeneralLibraryBusy] = useState(false)
+  const [generalLibrarySearch, setGeneralLibrarySearch] = useState('')
+  const [generalLibraryFormOpen, setGeneralLibraryFormOpen] = useState(false)
+  const [expandedGeneralMessageId, setExpandedGeneralMessageId] = useState<string | null>(null)
+  const [expandedGeneralDocumentId, setExpandedGeneralDocumentId] = useState<string | null>(null)
   const [expandedMeetingId, setExpandedMeetingId] = useState<string | null>(null)
   const [agendaNotes, setAgendaNotes] = useState<AgendaNote[]>([])
   const [agendaNoteTitle, setAgendaNoteTitle] = useState('')
@@ -389,6 +399,8 @@ export default function App() {
     return () => { cancelled = true }
   }, [userId, isOnline, syncVersion, authVerified])
 
+  useEffect(() => { if (userId) setGeneralLibraryItems(readJson<LibraryItem[]>(generalLibraryStorageKey(userId), [])) }, [userId])
+
   const saveVisitsCache = (id: string, rows: Visit[]) => localStorage.setItem(visitCacheKey(id), JSON.stringify(rows))
   const saveTopicsCache = (id: string, rows: VisitTopic[]) => localStorage.setItem(topicCacheKey(id), JSON.stringify(rows))
 
@@ -437,6 +449,30 @@ export default function App() {
       setNotice('Registro excluído da biblioteca.')
     } catch (e) { setError('Não foi possível excluir: ' + ((e as {message?:string}).message ?? 'erro inesperado')) }
     finally { setLibraryBusy(false) }
+  }
+
+  const generalLibraryStorageKey = (id: string) => 'wattwise:' + id + ':general-library'
+  function resetGeneralLibraryForm() { setEditingGeneralLibraryItem(null); setGeneralLibraryTitle(''); setGeneralLibraryContent(''); setGeneralLibraryFormOpen(false) }
+  function editGeneralLibraryItem(item: LibraryItem) { setGeneralLibraryKind(item.kind); setEditingGeneralLibraryItem(item.id); setGeneralLibraryTitle(item.title); setGeneralLibraryContent(item.content); setGeneralLibraryFormOpen(true) }
+  function saveGeneralLibraryItem(event: FormEvent) {
+    event.preventDefault()
+    if (!userId || !generalLibraryTitle.trim() || !generalLibraryContent.trim()) return
+    setGeneralLibraryBusy(true)
+    try {
+      const payload: LibraryItem = { id: editingGeneralLibraryItem ?? crypto.randomUUID(), user_id: userId, kind: generalLibraryKind, title: generalLibraryTitle.trim(), content: generalLibraryContent.trim(), updated_at: new Date().toISOString() }
+      const updated = [payload, ...generalLibraryItems.filter(item => item.id !== payload.id)]
+      setGeneralLibraryItems(updated)
+      localStorage.setItem(generalLibraryStorageKey(userId), JSON.stringify(updated))
+      resetGeneralLibraryForm(); setNotice('Registro salvo na Biblioteca.')
+    } catch { setError('Não foi possível salvar na Biblioteca.') }
+    finally { setGeneralLibraryBusy(false) }
+  }
+  function deleteGeneralLibraryItem(item: LibraryItem) {
+    if (!userId || !window.confirm('Excluir "' + item.title + '" da Biblioteca?')) return
+    const updated = generalLibraryItems.filter(entry => entry.id !== item.id)
+    setGeneralLibraryItems(updated); localStorage.setItem(generalLibraryStorageKey(userId), JSON.stringify(updated))
+    if (editingGeneralLibraryItem === item.id) resetGeneralLibraryForm()
+    setNotice('Registro excluído da Biblioteca.')
   }
 
   function resetAgendaNoteForm() { setEditingAgendaNoteId(null); setAgendaNoteTitle(''); setAgendaNoteContent(''); setAgendaNoteFormOpen(false) }
@@ -1268,14 +1304,14 @@ export default function App() {
     <aside className={`sidebar ${mobileOpen ? 'open' : ''}`}>
       <div className="brand"><div className="brand-mark">W</div><div><strong>Watt-Wise</strong><small>Organização & acompanhamento</small></div><button className="mobile-close" onClick={() => setMobileOpen(false)}><X size={18}/></button></div>
       <div className="nav-caption">ESPAÇO DE TRABALHO</div>
-      {nav.map(item => <button key={item.id} className={`nav-item ${(item.id === 'biblioteca' ? section === 'visitas' && visitPageTab === 'library' : section === item.id) ? 'active' : ''}`} onClick={() => {if (item.id === 'biblioteca') {setSection('visitas'); setVisitPageTab('library'); resetLibraryForm()} else {setSection(item.id); if (item.id === 'visitas') setVisitPageTab('visits')} setMobileOpen(false)}}><item.icon size={18}/>{item.label}</button>)}
+      {nav.map(item => <button key={item.id} className={`nav-item ${section === item.id ? 'active' : ''}`} onClick={() => {setSection(item.id); if (item.id === 'visitas') setVisitPageTab('visits'); if (item.id === 'biblioteca') resetGeneralLibraryForm(); setMobileOpen(false)}}><item.icon size={18}/>{item.label}</button>)}
       <div className="sidebar-bottom"><ShieldCheck size={17}/><span>Área privada</span><small>Conectado como {userEmail}</small></div>
     </aside>
     {mobileOpen && <button className="scrim" onClick={() => setMobileOpen(false)} aria-label="Fechar menu"/>}
     <main className="main">
       <header className="topbar"><button className="menu-button" onClick={() => setMobileOpen(true)}><Menu/></button><div className="breadcrumb">Watt-Wise <span>/</span> {nav.find(n => n.id === section)?.label}</div><div className={'sync-indicator ' + (!isOnline ? 'offline' : syncing ? 'syncing' : syncFailed ? 'pending' : pendingCount ? 'pending' : 'online')}><span className="sync-dot"/>{!isOnline ? 'Off-line' : syncing ? 'Sincronizando...' : syncFailed ? 'Falha na sincronização' : pendingCount ? pendingCount + ' pendente(s)' : 'Sincronizado'}</div><button className="profile" onClick={signOut} title="Sair da conta"><LogOut size={14}/> Sair <ChevronDown size={14}/></button></header>
       <div className="content">
-        <div className="welcome"><div><div className="eyebrow">PAINEL DE CONTROLE</div><h1>{section === 'agenda' ? 'Minha Agenda' : section === 'visitas' && visitPageTab === 'library' ? 'Biblioteca' : section === 'visitas' ? 'Visita à Cemig' : section === 'ouvidoria' ? 'Auditoria' : 'Histórico'}</h1><p>{section === 'agenda' ? 'Organize suas atividades, reuniões e agendamentos.' : section === 'visitas' && visitPageTab === 'library' ? 'Consulte, cadastre e organize suas mensagens prontas.' : section === 'visitas' ? 'Registre atas, encaminhamentos e pendências das visitas.' : section === 'ouvidoria' ? 'Área reservada para desenvolvimento dos registros e acompanhamentos da Auditoria.' : 'Acompanhe as movimentações registradas no sistema.'}</p></div><label className="date-chip"><CalendarDays size={16}/><span>Data</span><input aria-label="Selecionar data" type="date" value={selectedDashboardDate} onChange={e => { const day = e.target.value; setSelectedDashboardDate(day); setSelectedAgendaDate(day); setCalendarDate(day); setCalendarView('day') }}/></label></div>
+        <div className="welcome"><div><div className="eyebrow">PAINEL DE CONTROLE</div><h1>{section === 'agenda' ? 'Minha Agenda' : section === 'biblioteca' ? 'Biblioteca' : section === 'visitas' && visitPageTab === 'library' ? 'Biblioteca da Cemig' : section === 'visitas' ? 'Visita à Cemig' : section === 'ouvidoria' ? 'Auditoria' : 'Histórico'}</h1><p>{section === 'agenda' ? 'Organize suas atividades, reuniões e agendamentos.' : section === 'biblioteca' ? 'Organize mensagens prontas e documentos de uso geral, separados da Visita à Cemig.' : section === 'visitas' && visitPageTab === 'library' ? 'Consulte, cadastre e organize suas mensagens prontas da Cemig.' : section === 'visitas' ? 'Registre atas, encaminhamentos e pendências das visitas.' : section === 'ouvidoria' ? 'Área reservada para desenvolvimento dos registros e acompanhamentos da Auditoria.' : 'Acompanhe as movimentações registradas no sistema.'}</p></div><label className="date-chip"><CalendarDays size={16}/><span>Data</span><input aria-label="Selecionar data" type="date" value={selectedDashboardDate} onChange={e => { const day = e.target.value; setSelectedDashboardDate(day); setSelectedAgendaDate(day); setCalendarDate(day); setCalendarView('day') }}/></label></div>
 
         {error && <div className="error-message">{error}<button onClick={() => setError('')}>Fechar</button></div>}
         {notice && (section === 'agenda' || !notice.includes('transferida para hoje')) && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')}>Fechar</button></div>}
@@ -1457,7 +1493,16 @@ export default function App() {
               {libraryKind === 'message' && expandedLibraryMessageId === item.id && <button type="button" className="library-copy" onClick={() => {void navigator.clipboard.writeText(item.content).then(() => setNotice('Mensagem copiada.')).catch(() => setError('Não foi possível copiar a mensagem.'))}}><Copy size={15}/> Copiar mensagem</button>}
             </article>)}</div>
           </section>}
-          {section === 'ouvidoria' && <>
+          {section === 'biblioteca' && <section className="panel library-panel">
+          <div className="library-hero"><div className="library-hero-icon"><BookOpen size={23}/></div><div className="library-hero-copy"><span>BIBLIOTECA INDEPENDENTE</span><h2>Biblioteca</h2><p>Mensagens e documentos gerais, sem vínculo com a Visita à Cemig.</p></div><div className="library-total"><strong>{generalLibraryItems.length}</strong><span>itens salvos</span></div></div>
+          <div className="library-tabs" role="tablist" aria-label="Conteúdo da biblioteca geral"><button type="button" role="tab" aria-selected={generalLibraryKind === 'message'} className={generalLibraryKind === 'message' ? 'active' : ''} onClick={() => {setGeneralLibraryKind('message');resetGeneralLibraryForm();setGeneralLibrarySearch('')}}><Copy size={16}/> Mensagens prontas <small>{generalLibraryItems.filter(item => item.kind === 'message').length}</small></button><button type="button" role="tab" aria-selected={generalLibraryKind === 'documents'} className={generalLibraryKind === 'documents' ? 'active' : ''} onClick={() => {setGeneralLibraryKind('documents');resetGeneralLibraryForm();setGeneralLibrarySearch('')}}><ClipboardList size={16}/> Documentos <small>{generalLibraryItems.filter(item => item.kind === 'documents').length}</small></button></div>
+          <div className="library-toolbar"><label className="library-search"><Search size={17}/><input aria-label="Pesquisar biblioteca geral" value={generalLibrarySearch} onChange={e => setGeneralLibrarySearch(e.target.value)} placeholder="Buscar pelo título ou conteúdo..."/>{generalLibrarySearch && <button type="button" onClick={() => setGeneralLibrarySearch('')} aria-label="Limpar pesquisa"><X size={15}/></button>}</label><button type="button" className="primary-button library-new-button" onClick={() => {if (generalLibraryFormOpen && !editingGeneralLibraryItem) resetGeneralLibraryForm(); else {resetGeneralLibraryForm();setGeneralLibraryFormOpen(true)}}}><Plus size={16}/>{generalLibraryFormOpen && !editingGeneralLibraryItem ? 'Fechar cadastro' : generalLibraryKind === 'message' ? 'Nova mensagem' : 'Novo documento'}</button></div>
+          {generalLibraryFormOpen && <form className="library-editor" onSubmit={saveGeneralLibraryItem}><div className="library-editor-title"><div><span>{editingGeneralLibraryItem ? 'EDIÇÃO' : 'NOVO CADASTRO'}</span><h3>{editingGeneralLibraryItem ? 'Editar registro' : generalLibraryKind === 'message' ? 'Cadastrar mensagem pronta' : 'Cadastrar documento'}</h3></div><button type="button" className="icon-button" onClick={resetGeneralLibraryForm} aria-label="Fechar formulário"><X size={17}/></button></div><label>{generalLibraryKind === 'message' ? 'Título da mensagem' : 'Nome do documento'}<input required value={generalLibraryTitle} onChange={e => setGeneralLibraryTitle(e.target.value)} placeholder="Ex.: Retorno ao cliente"/></label><label>{generalLibraryKind === 'message' ? 'Texto completo' : 'Descrição ou orientações'}<textarea required rows={6} value={generalLibraryContent} onChange={e => setGeneralLibraryContent(e.target.value)} placeholder="Digite o conteúdo..."/></label><div className="library-editor-actions"><button className="primary-button" type="submit" disabled={generalLibraryBusy || !generalLibraryTitle.trim() || !generalLibraryContent.trim()}><Save size={15}/>{generalLibraryBusy ? 'Salvando...' : editingGeneralLibraryItem ? 'Salvar alterações' : 'Salvar na biblioteca'}</button><button type="button" className="secondary-button" onClick={resetGeneralLibraryForm}>Cancelar</button></div></form>}
+          <div className="library-list-heading"><div><h3>{generalLibraryKind === 'message' ? 'Mensagens salvas' : 'Documentos salvos'}</h3><p>Conteúdo independente da biblioteca de atendimento Cemig.</p></div><span>{generalLibraryItems.filter(item => item.kind === generalLibraryKind && (item.title + ' ' + item.content).toLocaleLowerCase('pt-BR').includes(generalLibrarySearch.toLocaleLowerCase('pt-BR'))).length} resultado(s)</span></div>
+          <div className="library-items">{generalLibraryItems.filter(item => item.kind === generalLibraryKind && (item.title + ' ' + item.content).toLocaleLowerCase('pt-BR').includes(generalLibrarySearch.toLocaleLowerCase('pt-BR'))).length === 0 ? <div className="library-empty"><div><BookOpen size={25}/></div><strong>{generalLibrarySearch ? 'Nenhum resultado encontrado' : 'Sua Biblioteca está vazia'}</strong><span>{generalLibrarySearch ? 'Tente outro termo.' : 'Cadastre aqui mensagens prontas e documentos gerais. Eles não se misturam com a Biblioteca da Cemig.'}</span>{!generalLibrarySearch && <button type="button" className="secondary-button" onClick={() => setGeneralLibraryFormOpen(true)}><Plus size={15}/> Começar cadastro</button>}</div> : generalLibraryItems.filter(item => item.kind === generalLibraryKind && (item.title + ' ' + item.content).toLocaleLowerCase('pt-BR').includes(generalLibrarySearch.toLocaleLowerCase('pt-BR'))).map(item => <article className="library-item" key={item.id}><div className="library-item-heading"><div className="library-item-title"><button type="button" className={generalLibraryKind === 'message' ? 'library-message-toggle' : 'library-document-toggle'} aria-expanded={(generalLibraryKind === 'message' ? expandedGeneralMessageId : expandedGeneralDocumentId) === item.id} onClick={() => generalLibraryKind === 'message' ? setExpandedGeneralMessageId(expandedGeneralMessageId === item.id ? null : item.id) : setExpandedGeneralDocumentId(expandedGeneralDocumentId === item.id ? null : item.id)}>{item.title}<span>{(generalLibraryKind === 'message' ? expandedGeneralMessageId : expandedGeneralDocumentId) === item.id ? 'Ocultar conteúdo' : 'Ver conteúdo'}</span></button></div><div className="library-item-actions"><button type="button" className="icon-button" title="Editar" onClick={() => editGeneralLibraryItem(item)}><Pencil size={15}/></button><button type="button" className="icon-button danger-icon" title="Excluir" onClick={() => deleteGeneralLibraryItem(item)}><Trash2 size={15}/></button></div></div>{((generalLibraryKind === 'message' && expandedGeneralMessageId === item.id) || (generalLibraryKind === 'documents' && expandedGeneralDocumentId === item.id)) && <p>{item.content}</p>}{generalLibraryKind === 'message' && expandedGeneralMessageId === item.id && <button type="button" className="library-copy" onClick={() => void navigator.clipboard.writeText(item.content).then(() => setNotice('Mensagem copiada.')).catch(() => setError('Não foi possível copiar a mensagem.'))}><Copy size={15}/> Copiar mensagem</button>}</article>)}</div>
+          <p className="audit-footnote">Esta Biblioteca é independente da Biblioteca da Cemig. Os registros são salvos neste navegador, por usuário, e não sincronizam entre dispositivos.</p>
+        </section>}
+        {section === 'ouvidoria' && <>
             <div className="audit-tabs" role="tablist" aria-label="Funcionalidades de auditoria">
               <button type="button" role="tab" aria-selected={auditTab==='invoices'} className={auditTab==='invoices'?'audit-tab active':'audit-tab'} onClick={()=>setAuditTab('invoices')}><FileSpreadsheet size={16}/> Faturas não geradas</button>
               <button type="button" role="tab" aria-selected={auditTab==='contracts'} className={auditTab==='contracts'?'audit-tab active':'audit-tab'} onClick={()=>setAuditTab('contracts')}><FileSpreadsheet size={16}/> Contratos + Faturas não geradas</button>
