@@ -289,7 +289,7 @@ export default function App() {
   const [contractListFile, setContractListFile] = useState<File|null>(null)
   const [invoiceListFile, setInvoiceListFile] = useState<File|null>(null)
   const [contractAuditResult, setContractAuditResult] = useState<{fileNames:string[];total:number;matched:number;missing:Array<{client:string;installation:string;uc:string}>;warnings:string[]}|null>(null)
-  const [auditResult, setAuditResult] = useState<{ fileName: string; months: string[]; markedCount: number; missing: Array<{ installation: string; client: string }>; rowCount: number; uniqueInstallations: number; invalidRows: number; duplicateInstallationMonths: number; warnings: string[] } | null>(null)
+  const [auditResult, setAuditResult] = useState<{ fileName: string; months: string[]; markedCount: number; missing: Array<{ installation: string; uc: string; client: string }>; rowCount: number; uniqueInstallations: number; uniquePairs: number; invalidRows: number; duplicateInstallationMonths: number; warnings: string[] } | null>(null)
   const auditWorkbookRef = useRef<ExcelJS.Workbook | null>(null)
   const auditFileNameRef = useRef('')
 
@@ -769,85 +769,91 @@ export default function App() {
         if (sheet.rowCount > 100000) throw new Error('A aba "' + sheet.name + '" possui mais de 100 mil linhas. Reduza o arquivo para evitar uso excessivo de memória.')
         if (sheet.columnCount > 500) throw new Error('A aba "' + sheet.name + '" possui mais de 500 colunas. Confira a estrutura do arquivo antes de continuar.')
       }
-      let target: { worksheet: ExcelJS.Worksheet; headerRow: number; installationCol: number; referenceCol: number; clientCol: number } | null = null
+      let target: { worksheet: ExcelJS.Worksheet; headerRow: number; installationCol: number; ucCol: number; referenceCol: number; clientCol: number } | null = null
       for (const worksheet of workbook.worksheets) {
         const scanLimit = Math.min(worksheet.rowCount, 20)
         for (let rowNumber = 1; rowNumber <= scanLimit; rowNumber++) {
           const row = worksheet.getRow(rowNumber)
-          let installationCol = 0, referenceCol = 0, clientCol = 0
+          let installationCol = 0, ucCol = 0, referenceCol = 0, clientCol = 0
           row.eachCell({ includeEmpty: false }, (cell, columnNumber) => {
             const heading = normalizeAuditText(auditCellValue(cell))
             if (!installationCol && heading.includes('instal')) installationCol = columnNumber
+            if (!ucCol && (heading.includes('unidade consumidora') || heading.includes('unid consumidora') || heading === 'uc' || heading.includes('n uc') || heading.includes('numero uc'))) ucCol = columnNumber
             if (!referenceCol && (heading.includes('refer') || heading.includes('compet') || heading === 'mes' || heading.includes('mes ref'))) referenceCol = columnNumber
             if (!clientCol && (heading.includes('cliente') || heading === 'nome' || heading.includes('nome do cliente'))) clientCol = columnNumber
           })
-          if (installationCol && referenceCol) { target = { worksheet, headerRow: rowNumber, installationCol, referenceCol, clientCol }; break }
+          if (installationCol && ucCol && referenceCol) { target = { worksheet, headerRow: rowNumber, installationCol, ucCol, referenceCol, clientCol }; break }
         }
         if (target) break
       }
-      if (!target) throw new Error('Não encontrei os cabeçalhos de Instalação e Mês de referência. Confira se a planilha contém essas colunas na primeira parte da aba.')
-      const { worksheet, headerRow, installationCol, referenceCol, clientCol } = target
-      const records: Array<{ rowNumber: number; installation: string; client: string; month: number }> = []
+      if (!target) throw new Error('Não encontrei os cabeçalhos de Instalação, Unidade Consumidora e Mês de referência. A comparação exige os três campos.')
+      const { worksheet, headerRow, installationCol, ucCol, referenceCol, clientCol } = target
+      const records: Array<{ rowNumber: number; installation: string; uc: string; client: string; month: number }> = []
       const monthsFound = new Set<number>()
       let invalidRows = 0
-      const seenInstallationMonth = new Set<string>()
+      const seenPairMonth = new Set<string>()
       let duplicateInstallationMonths = 0
-      const clientsByInstallation = new Map<string, Set<string>>()
+      const clientsByPair = new Map<string, Set<string>>()
       worksheet.eachRow((row, rowNumber) => {
         if (rowNumber <= headerRow) return
         const rawInstallation = auditCellValue(row.getCell(installationCol))
-        const installation = String(rawInstallation ?? '').replace(/\.0$/, '').replace(/[^\dA-Za-z]/g, '')
-        if (!installation) return
+        const installation = String(rawInstallation ?? '').replace(/\\.0$/, '').replace(/[^\\dA-Za-z]/g, '')
+        const rawUc = auditCellValue(row.getCell(ucCol))
+        const uc = String(rawUc ?? '').replace(/\\.0$/, '').replace(/[^\\dA-Za-z]/g, '')
+        if (!installation || !uc) return
         const month = parseAuditMonth(auditCellValue(row.getCell(referenceCol)) ?? row.getCell(referenceCol).text)
         if (month === null) { invalidRows++; return }
         const rawClient = clientCol ? auditCellValue(row.getCell(clientCol)) : ''
         const client = String(rawClient ?? '').trim()
-        records.push({ rowNumber, installation, client, month })
+        records.push({ rowNumber, installation, uc, client, month })
         monthsFound.add(month)
-        const pair = installation + '|' + month
-        if (seenInstallationMonth.has(pair)) duplicateInstallationMonths++
-        else seenInstallationMonth.add(pair)
+        const pairKey = installation + '|' + uc
+        const pairMonth = pairKey + '|' + month
+        if (seenPairMonth.has(pairMonth)) duplicateInstallationMonths++
+        else seenPairMonth.add(pairMonth)
         if (client) {
-          if (!clientsByInstallation.has(installation)) clientsByInstallation.set(installation, new Set())
-          clientsByInstallation.get(installation)!.add(client)
+          if (!clientsByPair.has(pairKey)) clientsByPair.set(pairKey, new Set())
+          clientsByPair.get(pairKey)!.add(client)
         }
       })
-      if (!records.length) throw new Error('Nenhum registro válido com número de instalação e mês de referência foi encontrado. O arquivo não foi alterado.')
+      if (!records.length) throw new Error('Nenhum registro válido com instalação, unidade consumidora e mês de referência foi encontrado. O arquivo não foi alterado.')
       const latestMonths = [...monthsFound].sort((a, b) => b - a).slice(0, 3)
       if (latestMonths.length < 3) throw new Error('A planilha precisa conter pelo menos três meses de referência diferentes para realizar a comparação. O arquivo não foi alterado.')
       const [latest, previousOne, previousTwo] = latestMonths
-      const byInstallation = new Map<string, Set<number>>()
-      const clientByInstallation = new Map<string, string>()
+      const byPair = new Map<string, Set<number>>()
+      const clientByPair = new Map<string, string>()
       for (const record of records) {
-        if (!byInstallation.has(record.installation)) byInstallation.set(record.installation, new Set())
-        byInstallation.get(record.installation)!.add(record.month)
-        if (record.client && !clientByInstallation.has(record.installation)) clientByInstallation.set(record.installation, record.client)
+        const pairKey = record.installation + '|' + record.uc
+        if (!byPair.has(pairKey)) byPair.set(pairKey, new Set())
+        byPair.get(pairKey)!.add(record.month)
+        if (record.client && !clientByPair.has(pairKey)) clientByPair.set(pairKey, record.client)
       }
       const marked = new Set<string>()
-      const missing: Array<{ installation: string; client: string }> = []
-      for (const [installation, references] of byInstallation) {
-        if (latestMonths.every(month => references.has(month))) marked.add(installation)
+      const missing: Array<{ installation: string; uc: string; client: string }> = []
+      for (const [pairKey, references] of byPair) {
+        const [installation, uc] = pairKey.split('|')
+        if (latestMonths.every(month => references.has(month))) marked.add(pairKey)
         else if (references.has(previousOne) && references.has(previousTwo) && !references.has(latest)) {
-          missing.push({ installation, client: clientByInstallation.get(installation) || 'Nome não informado' })
+          missing.push({ installation, uc, client: clientByPair.get(pairKey) || 'Nome não informado' })
         }
       }
       const warnings: string[] = []
       if (monthsFound.size > 3) warnings.push('Foram encontrados ' + monthsFound.size + ' meses de referência. A comparação utilizou somente os três mais recentes; os meses anteriores foram ignorados.')
-      if (invalidRows > 0) warnings.push(invalidRows + ' linha(s) com instalação, mas referência de mês inválida, foram ignoradas.')
-      if (duplicateInstallationMonths > 0) warnings.push('Há ' + duplicateInstallationMonths + ' registro(s) repetidos para a mesma instalação e mês. Confira antes de interpretar os resultados.')
-      const conflictingClients = [...clientsByInstallation.values()].filter(names => names.size > 1).length
-      if (conflictingClients > 0) warnings.push(conflictingClients + ' instalação(ões) aparecem associadas a mais de um nome de cliente.')
+      if (invalidRows > 0) warnings.push(invalidRows + ' linha(s) com instalação e unidade consumidora, mas referência de mês inválida, foram ignoradas.')
+      if (duplicateInstallationMonths > 0) warnings.push('Há ' + duplicateInstallationMonths + ' registro(s) repetidos para a mesma instalação + unidade consumidora + mês. Confira antes de interpretar os resultados.')
+      const conflictingClients = [...clientsByPair.values()].filter(names => names.size > 1).length
+      if (conflictingClients > 0) warnings.push(conflictingClients + ' combinação(ões) instalação + UC aparecem associadas a mais de um nome de cliente.')
       if (records.length > 50000) warnings.push('Arquivo grande: foram processados mais de 50 mil registros. Confira se o resultado corresponde ao esperado.')
       const orangeFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFD08A' } }
       for (const record of records) {
-        if (!marked.has(record.installation)) continue
+        if (!marked.has(record.installation + '|' + record.uc)) continue
         const row = worksheet.getRow(record.rowNumber)
         row.eachCell({ includeEmpty: true }, cell => { cell.fill = orangeFill })
       }
       auditWorkbookRef.current = workbook
       auditFileNameRef.current = file.name
-      setAuditResult({ fileName: file.name, months: latestMonths.map(auditMonthLabel), markedCount: marked.size, missing: missing.sort((a, b) => a.installation.localeCompare(b.installation, 'pt-BR')), rowCount: records.length, uniqueInstallations: byInstallation.size, invalidRows, duplicateInstallationMonths, warnings })
-      setNotice('Auditoria concluída. O arquivo foi processado somente neste dispositivo; ele não foi enviado ao servidor.')
+      setAuditResult({ fileName: file.name, months: latestMonths.map(auditMonthLabel), markedCount: marked.size, missing: missing.sort((a, b) => a.installation.localeCompare(b.installation, 'pt-BR') || a.uc.localeCompare(b.uc, 'pt-BR')), rowCount: records.length, uniqueInstallations: new Set(records.map(record => record.installation)).size, uniquePairs: byPair.size, invalidRows, duplicateInstallationMonths, warnings })
+      setNotice('Auditoria concluída usando a combinação número de instalação + unidade consumidora. O arquivo foi processado somente neste dispositivo; ele não foi enviado ao servidor.')
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'Não foi possível ler a planilha.'
       setError(message)
@@ -1508,16 +1514,16 @@ export default function App() {
               <button type="button" role="tab" aria-selected={auditTab==='contracts'} className={auditTab==='contracts'?'audit-tab active':'audit-tab'} onClick={()=>setAuditTab('contracts')}><FileSpreadsheet size={16}/> Contratos + Faturas não geradas</button>
             </div>
             {auditTab==='invoices' && <section className="panel audit-panel">
-              <div className="panel-heading"><div><h2>Fatura não gerada</h2><p>Anexe a planilha de faturamento para comparar automaticamente as três referências mais recentes.</p></div><span className="soft-tag">AUDITORIA POR INSTALAÇÃO</span></div>
+              <div className="panel-heading"><div><h2>Fatura não gerada</h2><p>Anexe a planilha de faturamento para comparar automaticamente as três referências mais recentes.</p></div><span className="soft-tag">AUDITORIA POR INSTALAÇÃO + UC</span></div>
               <div className="audit-security-note"><ShieldCheck size={18}/><span><strong>Processamento protegido</strong>O arquivo é lido e auditado no seu próprio navegador. Ele não é enviado ao Watt-Wise, ao Supabase nem armazenado na conta.</span></div>
               <label className="audit-upload" htmlFor="audit-spreadsheet"><Upload size={22}/><strong>{auditBusy ? 'Analisando planilha...' : 'Selecionar planilha Excel'}</strong><span>Formato .xlsx · até 10 MB</span><input id="audit-spreadsheet" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={auditBusy} onChange={e => { const file = e.target.files?.[0]; if (file) void auditInvoices(file); e.currentTarget.value = '' }}/></label>
-              {auditBusy && <div className="audit-progress"><span className="spin"><LoaderCircle size={17}/></span> Lendo as referências e comparando as instalações...</div>}
+              {auditBusy && <div className="audit-progress"><span className="spin"><LoaderCircle size={17}/></span> Lendo as referências e comparando instalação + unidade consumidora...</div>}
               {auditResult && <>
                 <div className="audit-result-heading"><div><strong>Resultado da auditoria</strong><small>{auditResult.fileName}</small></div><div className="audit-actions"><button type="button" className="secondary-button" onClick={clearAudit}>Limpar</button><button type="button" className="primary-button" onClick={() => void downloadAuditedWorkbook()}><FileDown size={15}/> Baixar planilha auditada</button></div></div>
                 <div className="audit-months"><span>Referências identificadas (mais recente primeiro):</span>{auditResult.months.map(month => <b key={month}>{month}</b>)}</div>
                 <div className="audit-summary audit-summary-enhanced">
                   <div><span>Registros analisados</span><strong>{auditResult.rowCount.toLocaleString('pt-BR')}</strong><small>Linhas válidas na aba de dados</small></div>
-                  <div><span>Instalações únicas</span><strong>{auditResult.uniqueInstallations.toLocaleString('pt-BR')}</strong><small>Identificadas para comparação</small></div>
+                  <div><span>Instalações únicas</span><strong>{auditResult.uniqueInstallations.toLocaleString('pt-BR')}</strong><small>Sem considerar UC</small></div><div><span>Combinações instalação + UC</span><strong>{auditResult.uniquePairs.toLocaleString('pt-BR')}</strong><small>Chave de comparação</small></div>
                   <div><span>Instalações com boleto nos 3 meses</span><strong>{auditResult.markedCount}</strong><small><i className="audit-dot orange"/> Linha inteira marcada em laranja</small></div>
                   <div><span>Sem boleto no mês mais recente</span><strong>{auditResult.missing.length}</strong><small><i className="audit-dot"/> Presentes nos 2 meses anteriores</small></div>
                 </div>
@@ -1525,9 +1531,9 @@ export default function App() {
                 <div className="audit-validation-ok"><ShieldCheck size={16}/> Verificações estruturais concluídas. O arquivo original não é sobrescrito.</div>
                 <div className="audit-missing-list">
                   <div className="audit-list-heading"><strong>Instalações para conferir</strong><span>{auditResult.missing.length} registro(s)</span></div>
-                  {auditResult.missing.length === 0 ? <div className="audit-empty">Nenhuma instalação encontrada com boleto nos dois meses anteriores e ausência na referência mais recente.</div> : <div className="audit-table-wrap"><table className="audit-table"><thead><tr><th>Cliente</th><th>Número da instalação</th></tr></thead><tbody>{auditResult.missing.map(item => <tr key={item.installation}><td>{item.client}</td><td>{item.installation}</td></tr>)}</tbody></table></div>}
+                  {auditResult.missing.length === 0 ? <div className="audit-empty">Nenhuma instalação encontrada com boleto nos dois meses anteriores e ausência na referência mais recente.</div> : <div className="audit-table-wrap"><table className="audit-table"><thead><tr><th>Cliente</th><th>Número da instalação</th><th>Unid. Consumidora</th></tr></thead><tbody>{auditResult.missing.map(item => <tr key={item.installation}><td>{item.client}</td><td>{item.installation}</td><td>{item.uc}</td></tr>)}</tbody></table></div>}
                 </div>
-                <p className="audit-footnote">A marcação laranja é aplicada à linha inteira de todas as ocorrências da instalação quando ela aparece nas três referências. As instalações presentes nos dois meses anteriores, mas ausentes no mês mais recente, ficam sem a marcação.</p>
+                <p className="audit-footnote">A marcação laranja é aplicada à linha inteira de todas as ocorrências da combinação instalação + unidade consumidora quando ela aparece nas três referências. As instalações presentes nos dois meses anteriores, mas ausentes no mês mais recente, ficam sem a marcação.</p>
               </>}
             </section>}
             {auditTab==='contracts' && <section className="panel audit-panel contract-audit-panel">
