@@ -994,62 +994,110 @@ export default function App() {
     }
   }
   async function exportContractAudit() {
-    if (!contractAuditResult) return
+    if (!contractAuditResult || !contractListFile) return
     try {
-      const workbook = new ExcelJS.Workbook()
-      workbook.creator = 'Agenda Virtual'
-      workbook.created = new Date()
-      workbook.modified = new Date()
-      const sheet = workbook.addWorksheet('Contratos sem faturas', {
-        views: [{ state: 'frozen', ySplit: 1, xSplit: 0, showGridLines: false }],
-        pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
-      })
-      sheet.columns = [
-        { header: 'Cliente', key: 'client', width: 48 },
-        { header: 'Instalação', key: 'installation', width: 22 },
-        { header: 'Unid. Consumidora', key: 'uc', width: 24 },
-      ]
-      sheet.addRows(contractAuditResult.missing.map(item => ({
-        client: item.client,
-        installation: item.installation,
-        uc: item.uc,
-      })))
-      const header = sheet.getRow(1)
-      header.height = 28
-      header.eachCell(cell => {
-        cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 }
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF243746' } }
-        cell.alignment = { vertical: 'middle', horizontal: 'left' }
-        cell.border = { bottom: { style: 'medium', color: { argb: 'FF19A7A0' } } }
-      })
-      for (let row = 2; row <= sheet.rowCount; row++) {
-        const current = sheet.getRow(row)
-        current.height = 21
-        current.alignment = { vertical: 'middle' }
-        if (row % 2 === 0) {
-          current.eachCell(cell => {
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F6F8' } }
-          })
-        }
-        current.getCell(2).numFmt = '@'
-        current.getCell(3).numFmt = '@'
+      // Use the uploaded contract workbook itself as the template so its styles,
+      // columns, formulas, sheets, and original layout remain intact.
+      const zip = await JSZip.loadAsync(await contractListFile.arrayBuffer())
+      const readXml = async (path: string) => {
+        const entry = zip.file(path)
+        if (!entry) throw new Error('Componente ausente no Excel: ' + path)
+        return parseXlsxXml(await entry.async('string'), path)
       }
-      sheet.autoFilter = { from: 'A1', to: 'C' + Math.max(1, sheet.rowCount) }
-      sheet.views = [{ state: 'frozen', ySplit: 1, showGridLines: false }]
-      const buffer = await workbook.xlsx.writeBuffer()
-      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      const url = URL.createObjectURL(blob)
+      const workbookXml = await readXml('xl/workbook.xml')
+      const relsXml = await readXml('xl/_rels/workbook.xml.rels')
+      const relMap = new Map<string, string>()
+      for (const rel of xmlElements(relsXml, 'Relationship')) {
+        const id = rel.getAttribute('Id'), target = rel.getAttribute('Target')
+        if (id && target) relMap.set(id, resolveXlsxTarget('xl/workbook.xml', target))
+      }
+      const sharedStrings: string[] = []
+      if (zip.file('xl/sharedStrings.xml')) {
+        const sharedXml = await readXml('xl/sharedStrings.xml')
+        for (const item of xmlElements(sharedXml, 'si')) sharedStrings.push(xmlElements(item, 't').map(t => t.textContent ?? '').join(''))
+      }
+      const missingKeys = new Set(contractAuditResult.missing.map(item => normalizeContractAuditKey(item.installation) + '|' + normalizeContractAuditKey(item.uc)))
+      let targetPath = ''
+      for (const sheetNode of xmlElements(workbookXml, 'sheet')) {
+        const relationId = sheetNode.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id') || sheetNode.getAttribute('r:id')
+        const sheetPath = relationId ? relMap.get(relationId) : undefined
+        if (!sheetPath) continue
+        const xml = await readXml(sheetPath)
+        const sheetData = xmlElements(xml, 'sheetData')[0]
+        if (!sheetData) continue
+        const rows = xmlElements(sheetData, 'row')
+        const headerRow = rows.find(rowNode => {
+          const cells = new Map<number, string>()
+          for (const cell of xmlElements(rowNode, 'c')) {
+            const letters = (cell.getAttribute('r') || '').match(/[A-Z]+/i)?.[0] || ''
+            let col = 0
+            for (const letter of letters.toUpperCase()) col = col * 26 + letter.charCodeAt(0) - 64
+            const type = cell.getAttribute('t') || ''
+            const v = xmlElements(cell, 'v')[0]
+            let value = v?.textContent ?? ''
+            if (type === 's' && value) value = sharedStrings[Number(value)] ?? ''
+            else if (type === 'inlineStr') value = xmlElements(xmlElements(cell, 'is')[0] ?? cell, 't').map(t => t.textContent ?? '').join('')
+            cells.set(col, normalizeAuditText(value))
+          }
+          return ['número instalação','nº unidade consumidora','titular conta','situação contrato'].every(h => [...cells.values()].includes(normalizeAuditText(h)))
+        })
+        if (!headerRow) continue
+        const headerNumber = Number(headerRow.getAttribute('r')) || 1
+        const headerMap = new Map<string, number>()
+        for (const cell of xmlElements(headerRow, 'c')) {
+          const letters = (cell.getAttribute('r') || '').match(/[A-Z]+/i)?.[0] || ''
+          let col = 0
+          for (const letter of letters.toUpperCase()) col = col * 26 + letter.charCodeAt(0) - 64
+          const type = cell.getAttribute('t') || ''
+          const v = xmlElements(cell, 'v')[0]
+          let value = v?.textContent ?? ''
+          if (type === 's' && value) value = sharedStrings[Number(value)] ?? ''
+          else if (type === 'inlineStr') value = xmlElements(xmlElements(cell, 'is')[0] ?? cell, 't').map(t => t.textContent ?? '').join('')
+          headerMap.set(normalizeAuditText(value), col)
+        }
+        const getValue = (rowNode: Element, col: number) => {
+          const cell = xmlElements(rowNode, 'c').find(c => {
+            const letters = (c.getAttribute('r') || '').match(/[A-Z]+/i)?.[0] || ''
+            let n = 0
+            for (const letter of letters.toUpperCase()) n = n * 26 + letter.charCodeAt(0) - 64
+            return n === col
+          })
+          if (!cell) return ''
+          const type = cell.getAttribute('t') || ''
+          const v = xmlElements(cell, 'v')[0]
+          let value = v?.textContent ?? ''
+          if (type === 's' && value) value = sharedStrings[Number(value)] ?? ''
+          else if (type === 'inlineStr') value = xmlElements(xmlElements(cell, 'is')[0] ?? cell, 't').map(t => t.textContent ?? '').join('')
+          return value
+        }
+        const installationCol = headerMap.get(normalizeAuditText('Número instalação'))
+        const ucCol = headerMap.get(normalizeAuditText('Nº unidade consumidora'))
+        const statusCol = headerMap.get(normalizeAuditText('Situação Contrato'))
+        if (installationCol == null || ucCol == null || statusCol == null) continue
+        for (const rowNode of rows) {
+          const number = Number(rowNode.getAttribute('r')) || 0
+          if (number <= headerNumber) continue
+          if (normalizeAuditText(getValue(rowNode, statusCol)) !== 'ativo') { sheetData.removeChild(rowNode); continue }
+          const key = normalizeContractAuditKey(getValue(rowNode, installationCol)) + '|' + normalizeContractAuditKey(getValue(rowNode, ucCol))
+          if (!missingKeys.has(key)) sheetData.removeChild(rowNode)
+        }
+        targetPath = sheetPath
+        zip.file(sheetPath, new XMLSerializer().serializeToString(xml))
+        break
+      }
+      if (!targetPath) throw new Error('Não foi possível localizar a aba de contratos no arquivo modelo.')
+      const buffer = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' })
+      const url = URL.createObjectURL(buffer)
       const link = document.createElement('a')
       link.href = url
-      link.download = 'contratos_sem_faturas.xlsx'
+      link.download = 'contratos_sem_faturas_modelo_original.xlsx'
       link.click()
       window.setTimeout(() => URL.revokeObjectURL(url), 1000)
-      setNotice('Planilha Excel formatada exportada com sucesso.')
+      setNotice('Exportação concluída usando a planilha original de contratos como modelo, preservando a formatação.')
     } catch (err) {
-      setError('Não foi possível gerar a planilha Excel: ' + (err instanceof Error ? err.message : 'erro inesperado.'))
+      setError('Não foi possível exportar usando a planilha original: ' + (err instanceof Error ? err.message : 'erro inesperado.'))
     }
   }
-
 
   function exportVisitCsv() {
     const visit = visits.find(item => item.id === selectedVisitId)
