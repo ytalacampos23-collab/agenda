@@ -849,8 +849,21 @@ export default function App() {
     const validFile = (file: File) => file.name.toLowerCase().endsWith('.xlsx') && file.size > 0 && file.size <= 10 * 1024 * 1024
     if (!validFile(contractFile) || !validFile(invoiceFile)) { setError('Envie duas planilhas .xlsx válidas, com até 10 MB cada.'); setContractAuditBusy(false); return }
     try {
-      const [contractsWb, invoicesWb] = await Promise.all([new ExcelJS.Workbook(), new ExcelJS.Workbook()])
-      await Promise.all([contractsWb.xlsx.load(await contractFile.arrayBuffer()), invoicesWb.xlsx.load(await invoiceFile.arrayBuffer())])
+      const loadWorkbook = async (file: File, label: string) => {
+        const workbook = new ExcelJS.Workbook()
+        const bytes = new Uint8Array(await file.arrayBuffer())
+        try {
+          await workbook.xlsx.load(bytes)
+        } catch {
+          throw new Error('Não foi possível abrir a planilha de ' + label + '. Confira se o arquivo é um Excel .xlsx válido e tente novamente.')
+        }
+        if (!workbook.worksheets || workbook.worksheets.length === 0) {
+          throw new Error('A planilha de ' + label + ' não contém abas de dados reconhecidas.')
+        }
+        return workbook
+      }
+      const contractsWb = await loadWorkbook(contractFile, 'contratos')
+      const invoicesWb = await loadWorkbook(invoiceFile, 'faturas')
       const findHeaders = (sheet: ExcelJS.Worksheet, expected: string[]) => {
         for (let r=1;r<=Math.min(sheet.rowCount,20);r++) {
           const map = new Map<string,number>(); sheet.getRow(r).eachCell((cell,col)=>map.set(normalizeAuditText(auditCellValue(cell)),col))
