@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, CalendarClock, ClipboardList, History, Plus, Search, FileDown, FileSpreadsheet, Upload, ShieldCheck, Menu, X, CheckCircle2, Clock3, AlertCircle, ChevronDown, ChevronLeft, ChevronRight, LogOut, LoaderCircle, Trash2, Pencil, BookOpen, Copy, Save } from 'lucide-react'
 import ExcelJS from 'exceljs'
+import JSZip from 'jszip'
 import { hasSupabaseConfig, supabase } from './lib/supabase'
 
 type TaskStatus = 'A fazer' | 'Em andamento' | 'Concluído'
@@ -852,9 +853,19 @@ export default function App() {
       const loadWorkbook = async (file: File, label: string) => {
         const workbook = new ExcelJS.Workbook()
         try {
-          // O ExcelJS já recebe ArrayBuffer diretamente no fluxo de auditoria de faturas.
-          // Mantém o mesmo formato de entrada para evitar falhas na conversão intermediária.
-          await workbook.xlsx.load(await file.arrayBuffer())
+          // Alguns relatórios exportados usam prefixo XML "x:" no namespace principal.
+          // O ExcelJS não reconhece corretamente essa variação; normalizamos apenas os XMLs do pacote.
+          const zip = await JSZip.loadAsync(await file.arrayBuffer())
+          for (const [path, entry] of Object.entries(zip.files)) {
+            if (entry.dir || !path.toLowerCase().endsWith('.xml')) continue
+            const xml = await entry.async('string')
+            const normalizedXml = xml
+              .replace(/xmlns:x=(["'])http:\/\/schemas\.openxmlformats\.org\/spreadsheetml\/2006\/main\1/g, 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"')
+              .replace(/(<\/?)(?:x):/g, '$1')
+            zip.file(path, normalizedXml)
+          }
+          const normalizedFile = await zip.generateAsync({ type: 'uint8array' })
+          await workbook.xlsx.load(normalizedFile)
         } catch (cause) {
           console.error('Falha ao carregar planilha de ' + label, cause)
           const technicalDetail = cause instanceof Error ? cause.message : String(cause)
