@@ -782,16 +782,29 @@ export default function App() {
       }
       let target: { worksheet: ExcelJS.Worksheet; headerRow: number; installationCol: number; ucCol: number; referenceCol: number; clientCol: number } | null = null
       for (const worksheet of workbook.worksheets) {
-        const scanLimit = Math.min(worksheet.rowCount, 20)
+        // Algumas exportações incluem linhas de título/filtros antes do cabeçalho.
+        const scanLimit = Math.min(worksheet.rowCount, 60)
         for (let rowNumber = 1; rowNumber <= scanLimit; rowNumber++) {
           const row = worksheet.getRow(rowNumber)
           let installationCol = 0, ucCol = 0, referenceCol = 0, clientCol = 0
           row.eachCell({ includeEmpty: false }, (cell, columnNumber) => {
             const heading = normalizeAuditText(auditCellValue(cell))
-            if (!installationCol && heading.includes('instal')) installationCol = columnNumber
-            if (!ucCol && (heading.includes('unidade consumidora') || heading.includes('unid consumidora') || heading === 'uc' || heading.includes('n uc') || heading.includes('numero uc'))) ucCol = columnNumber
-            if (!referenceCol && (heading.includes('refer') || heading.includes('compet') || heading === 'mes' || heading.includes('mes ref'))) referenceCol = columnNumber
-            if (!clientCol && (heading.includes('cliente') || heading === 'nome' || heading.includes('nome do cliente'))) clientCol = columnNumber
+            const compact = heading.replace(/[^a-z0-9]/g, '')
+            if (!installationCol && (
+              compact.includes('instalacao') || compact.includes('numeroinstalacao') ||
+              compact.includes('ninstalacao') || compact === 'instal'
+            )) installationCol = columnNumber
+            if (!ucCol && (
+              compact.includes('unidadeconsumidora') || compact.includes('unidconsumidora') ||
+              compact === 'uc' || compact.includes('numerouc') || compact.includes('nuc') ||
+              compact.includes('codigouc')
+            )) ucCol = columnNumber
+            if (!referenceCol && (
+              compact.includes('mesdereferencia') || compact.includes('mesreferencia') ||
+              compact.includes('referencia') || compact.includes('competencia') ||
+              compact === 'mes' || compact === 'mesref' || compact.includes('periodoreferencia')
+            )) referenceCol = columnNumber
+            if (!clientCol && (compact.includes('cliente') || compact === 'nome' || compact.includes('nomedocliente'))) clientCol = columnNumber
           })
           if (installationCol && ucCol && referenceCol) { target = { worksheet, headerRow: rowNumber, installationCol, ucCol, referenceCol, clientCol }; break }
         }
