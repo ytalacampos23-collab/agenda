@@ -832,8 +832,9 @@ export default function App() {
       const missing: Array<{ installation: string; uc: string; client: string }> = []
       for (const [pairKey, references] of byPair) {
         const [installation, uc] = pairKey.split('|')
-        if (latestMonths.every(month => references.has(month))) marked.add(pairKey)
-        else if (references.has(previousOne) && references.has(previousTwo) && !references.has(latest)) {
+        // Current-month invoices are orange; recent historical pairs missing the latest reference are yellow.
+        if (references.has(latest)) marked.add(pairKey)
+        else if (references.has(previousOne) || references.has(previousTwo)) {
           missing.push({ installation, uc, client: clientByPair.get(pairKey) || 'Nome não informado' })
         }
       }
@@ -845,10 +846,14 @@ export default function App() {
       if (conflictingClients > 0) warnings.push(conflictingClients + ' combinação(ões) instalação + UC aparecem associadas a mais de um nome de cliente.')
       if (records.length > 50000) warnings.push('Arquivo grande: foram processados mais de 50 mil registros. Confira se o resultado corresponde ao esperado.')
       const orangeFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFD08A' } }
+      const yellowFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } }
+      const missingPairs = new Set(missing.map(item => item.installation + '|' + item.uc))
       for (const record of records) {
-        if (!marked.has(record.installation + '|' + record.uc)) continue
+        const pairKey = record.installation + '|' + record.uc
+        const fill = marked.has(pairKey) ? orangeFill : missingPairs.has(pairKey) ? yellowFill : null
+        if (!fill) continue
         const row = worksheet.getRow(record.rowNumber)
-        row.eachCell({ includeEmpty: true }, cell => { cell.fill = orangeFill })
+        row.eachCell({ includeEmpty: true }, cell => { cell.fill = fill })
       }
       auditWorkbookRef.current = workbook
       auditFileNameRef.current = file.name
@@ -1514,7 +1519,7 @@ export default function App() {
               <button type="button" role="tab" aria-selected={auditTab==='contracts'} className={auditTab==='contracts'?'audit-tab active':'audit-tab'} onClick={()=>setAuditTab('contracts')}><FileSpreadsheet size={16}/> Contratos + Faturas não geradas</button>
             </div>
             {auditTab==='invoices' && <section className="panel audit-panel">
-              <div className="panel-heading"><div><h2>Fatura não gerada</h2><p>Anexe a planilha de faturamento para comparar automaticamente as três referências mais recentes.</p></div><span className="soft-tag">AUDITORIA POR INSTALAÇÃO + UC</span></div>
+              <div className="panel-heading"><div><h2>Fatura não gerada</h2><p>Anexe a planilha de faturamento para conferir continuidade nas três referências mais recentes.</p></div><span className="soft-tag">AUDITORIA POR INSTALAÇÃO + UC</span></div>
               <div className="audit-security-note"><ShieldCheck size={18}/><span><strong>Processamento protegido</strong>O arquivo é lido e auditado no seu próprio navegador. Ele não é enviado ao Watt-Wise, ao Supabase nem armazenado na conta.</span></div>
               <label className="audit-upload" htmlFor="audit-spreadsheet"><Upload size={22}/><strong>{auditBusy ? 'Analisando planilha...' : 'Selecionar planilha Excel'}</strong><span>Formato .xlsx · até 10 MB</span><input id="audit-spreadsheet" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={auditBusy} onChange={e => { const file = e.target.files?.[0]; if (file) void auditInvoices(file); e.currentTarget.value = '' }}/></label>
               {auditBusy && <div className="audit-progress"><span className="spin"><LoaderCircle size={17}/></span> Lendo as referências e comparando instalação + unidade consumidora...</div>}
@@ -1524,16 +1529,16 @@ export default function App() {
                 <div className="audit-summary audit-summary-enhanced">
                   <div><span>Registros analisados</span><strong>{auditResult.rowCount.toLocaleString('pt-BR')}</strong><small>Linhas válidas na aba de dados</small></div>
                   <div><span>Instalações únicas</span><strong>{auditResult.uniqueInstallations.toLocaleString('pt-BR')}</strong><small>Sem considerar UC</small></div><div><span>Combinações instalação + UC</span><strong>{auditResult.uniquePairs.toLocaleString('pt-BR')}</strong><small>Chave de comparação</small></div>
-                  <div><span>Instalações com boleto nos 3 meses</span><strong>{auditResult.markedCount}</strong><small><i className="audit-dot orange"/> Linha inteira marcada em laranja</small></div>
-                  <div><span>Sem boleto no mês mais recente</span><strong>{auditResult.missing.length}</strong><small><i className="audit-dot"/> Presentes nos 2 meses anteriores</small></div>
+                  <div><span>Com fatura no mês vigente</span><strong>{auditResult.markedCount}</strong><small><i className="audit-dot orange"/> Linhas do mês vigente em laranja</small></div>
+                  <div><span>Sem fatura no mês vigente</span><strong>{auditResult.missing.length}</strong><small><i className="audit-dot"/> Faturados em uma das referências anteriores</small></div>
                 </div>
                 {auditResult.warnings.length > 0 && <div className="audit-validation-warnings"><strong><AlertCircle size={16}/> Atenção: confira os avisos antes de usar o resultado</strong><ul>{auditResult.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></div>}
                 <div className="audit-validation-ok"><ShieldCheck size={16}/> Verificações estruturais concluídas. O arquivo original não é sobrescrito.</div>
                 <div className="audit-missing-list">
-                  <div className="audit-list-heading"><strong>Instalações para conferir</strong><span>{auditResult.missing.length} registro(s)</span></div>
-                  {auditResult.missing.length === 0 ? <div className="audit-empty">Nenhuma instalação encontrada com boleto nos dois meses anteriores e ausência na referência mais recente.</div> : <div className="audit-table-wrap"><table className="audit-table"><thead><tr><th>Cliente</th><th>Número da instalação</th><th>Unid. Consumidora</th></tr></thead><tbody>{auditResult.missing.map(item => <tr key={item.installation}><td>{item.client}</td><td>{item.installation}</td><td>{item.uc}</td></tr>)}</tbody></table></div>}
+                  <div className="audit-list-heading"><strong>Clientes sem fatura no mês vigente</strong><span>{auditResult.missing.length} registro(s)</span></div>
+                  {auditResult.missing.length === 0 ? <div className="audit-empty">Nenhum cliente com faturamento recente foi identificado sem fatura na referência vigente.</div> : <div className="audit-table-wrap"><table className="audit-table"><thead><tr><th>Cliente</th><th>Número da instalação</th><th>Unid. Consumidora</th></tr></thead><tbody>{auditResult.missing.map(item => <tr key={item.installation}><td>{item.client}</td><td>{item.installation}</td><td>{item.uc}</td></tr>)}</tbody></table></div>}
                 </div>
-                <p className="audit-footnote">A marcação laranja é aplicada à linha inteira de todas as ocorrências da combinação instalação + unidade consumidora quando ela aparece nas três referências. As instalações presentes nos dois meses anteriores, mas ausentes no mês mais recente, ficam sem a marcação.</p>
+                <p className="audit-footnote">As linhas dos clientes com fatura na referência vigente são marcadas em laranja. Clientes com fatura em pelo menos uma das duas referências anteriores, mas sem fatura na referência vigente, são marcados em amarelo nas linhas históricas. A identificação é sempre pela combinação instalação + unidade consumidora.</p>
               </>}
             </section>}
             {auditTab==='contracts' && <section className="panel audit-panel contract-audit-panel">
