@@ -333,3 +333,7 @@
 .audit-validation-warnings li+li{margin-top:4px}
 .audit-validation-ok{display:flex;align-items:center;gap:7px;margin:0 0 14px;padding:10px 12px;border:1px solid #dcebe1;border-radius:8px;background:#f2f8f3;color:#477064;font-size:10px;line-height:1.5}
 @media(max-width:650px){.audit-summary-enhanced{grid-template-columns:1fr}}
+
+.contract-audit-upload-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:14px}
+.contract-audit-panel>.primary-button{margin:4px 0 14px}
+@media(max-width:650px){.contract-audit-upload-grid{grid-template-columns:1fr}}
