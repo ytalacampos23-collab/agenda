@@ -1122,7 +1122,13 @@ export default function App() {
         const generation = normalizeAuditText(get(row, invoiceHead.map, 'Geração de Faturas'))
         const invoiceStatus = normalizeAuditText(get(row, invoiceHead.map, 'Status da Fatura'))
         const boletoStatus = normalizeAuditText(get(row, invoiceHead.map, 'Status de Boleto Gerado'))
-        if (invoiceStatus.includes('cancelado') || generation !== 'ativo' || boletoStatus !== 'sucesso') { ignoredInvoiceRows++; continue }
+        // Fatura cancelada também comprova que existe registro de fatura para o contrato.
+        // Para os demais status, mantém a validação de geração ativa e boleto com sucesso.
+        if (invoiceStatus.includes('cancelado')) {
+          billed.add(installation + '|' + uc)
+          continue
+        }
+        if (generation !== 'ativo' || boletoStatus !== 'sucesso') { ignoredInvoiceRows++; continue }
         billed.add(installation + '|' + uc)
       }
       if (!invoiceRowsWithKeys) throw new Error('A aba de faturas foi aberta, mas não há registros com Instalação e Unid. Consumidora preenchidas.')
@@ -1130,7 +1136,7 @@ export default function App() {
       const warnings: string[] = []
       if (duplicates) warnings.push(duplicates + ' contrato(s) ativo(s) duplicado(s) pela combinação instalação + UC foram consolidados.')
       if (skipped) warnings.push(skipped + ' contrato(s) ativo(s) sem instalação ou UC foram ignorados.')
-      if (ignoredInvoiceRows) warnings.push(ignoredInvoiceRows + ' linha(s) de faturas sem geração ativa, boleto com sucesso ou com status cancelado não foram consideradas como faturamento válido.')
+      if (ignoredInvoiceRows) warnings.push(ignoredInvoiceRows + ' linha(s) de faturas sem geração ativa ou sem boleto com sucesso não foram consideradas como fatura válida. Faturas com status cancelado são consideradas como existentes.')
       setContractAuditResult({ fileNames: [contractFile.name, invoiceFile.name], total: activeContracts.size, matched: activeContracts.size - missing.length, missing, warnings })
       setNotice('Comparativo concluído. ' + activeContracts.size.toLocaleString('pt-BR') + ' contratos ativos comparados com ' + billed.size.toLocaleString('pt-BR') + ' combinações com fatura válida. Os arquivos foram processados localmente.')
     } catch (err) {
