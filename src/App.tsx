@@ -1247,6 +1247,7 @@ export default function App() {
   const nav = [
     { id: 'agenda' as const, label: 'Minha Agenda', icon: CalendarDays },
     { id: 'visitas' as const, label: 'Visita à Cemig', icon: ClipboardList },
+    { id: 'biblioteca' as const, label: 'Biblioteca', icon: BookOpen },
     { id: 'ouvidoria' as const, label: 'Auditoria', icon: ClipboardList },
     { id: 'historico' as const, label: 'Histórico', icon: History },
   ]
@@ -1267,14 +1268,14 @@ export default function App() {
     <aside className={`sidebar ${mobileOpen ? 'open' : ''}`}>
       <div className="brand"><div className="brand-mark">W</div><div><strong>Watt-Wise</strong><small>Organização & acompanhamento</small></div><button className="mobile-close" onClick={() => setMobileOpen(false)}><X size={18}/></button></div>
       <div className="nav-caption">ESPAÇO DE TRABALHO</div>
-      {nav.map(item => <button key={item.id} className={`nav-item ${section === item.id ? 'active' : ''}`} onClick={() => {setSection(item.id); setMobileOpen(false)}}><item.icon size={18}/>{item.label}</button>)}
+      {nav.map(item => <button key={item.id} className={`nav-item ${(item.id === 'biblioteca' ? section === 'visitas' && visitPageTab === 'library' : section === item.id) ? 'active' : ''}`} onClick={() => {if (item.id === 'biblioteca') {setSection('visitas'); setVisitPageTab('library'); resetLibraryForm()} else {setSection(item.id); if (item.id === 'visitas') setVisitPageTab('visits')} setMobileOpen(false)}}><item.icon size={18}/>{item.label}</button>)}
       <div className="sidebar-bottom"><ShieldCheck size={17}/><span>Área privada</span><small>Conectado como {userEmail}</small></div>
     </aside>
     {mobileOpen && <button className="scrim" onClick={() => setMobileOpen(false)} aria-label="Fechar menu"/>}
     <main className="main">
       <header className="topbar"><button className="menu-button" onClick={() => setMobileOpen(true)}><Menu/></button><div className="breadcrumb">Watt-Wise <span>/</span> {nav.find(n => n.id === section)?.label}</div><div className={'sync-indicator ' + (!isOnline ? 'offline' : syncing ? 'syncing' : syncFailed ? 'pending' : pendingCount ? 'pending' : 'online')}><span className="sync-dot"/>{!isOnline ? 'Off-line' : syncing ? 'Sincronizando...' : syncFailed ? 'Falha na sincronização' : pendingCount ? pendingCount + ' pendente(s)' : 'Sincronizado'}</div><button className="profile" onClick={signOut} title="Sair da conta"><LogOut size={14}/> Sair <ChevronDown size={14}/></button></header>
       <div className="content">
-        <div className="welcome"><div><div className="eyebrow">PAINEL DE CONTROLE</div><h1>{section === 'agenda' ? 'Minha Agenda' : section === 'visitas' ? 'Visita à Cemig' : section === 'ouvidoria' ? 'Auditoria' : 'Histórico'}</h1><p>{section === 'agenda' ? 'Organize suas atividades, reuniões e agendamentos.' : section === 'visitas' ? 'Registre atas, encaminhamentos e pendências das visitas.' : section === 'ouvidoria' ? 'Área reservada para desenvolvimento dos registros e acompanhamentos da Auditoria.' : 'Acompanhe as movimentações registradas no sistema.'}</p></div><label className="date-chip"><CalendarDays size={16}/><span>Data</span><input aria-label="Selecionar data" type="date" value={selectedDashboardDate} onChange={e => { const day = e.target.value; setSelectedDashboardDate(day); setSelectedAgendaDate(day); setCalendarDate(day); setCalendarView('day') }}/></label></div>
+        <div className="welcome"><div><div className="eyebrow">PAINEL DE CONTROLE</div><h1>{section === 'agenda' ? 'Minha Agenda' : section === 'visitas' && visitPageTab === 'library' ? 'Biblioteca' : section === 'visitas' ? 'Visita à Cemig' : section === 'ouvidoria' ? 'Auditoria' : 'Histórico'}</h1><p>{section === 'agenda' ? 'Organize suas atividades, reuniões e agendamentos.' : section === 'visitas' && visitPageTab === 'library' ? 'Consulte, cadastre e organize suas mensagens prontas.' : section === 'visitas' ? 'Registre atas, encaminhamentos e pendências das visitas.' : section === 'ouvidoria' ? 'Área reservada para desenvolvimento dos registros e acompanhamentos da Auditoria.' : 'Acompanhe as movimentações registradas no sistema.'}</p></div><label className="date-chip"><CalendarDays size={16}/><span>Data</span><input aria-label="Selecionar data" type="date" value={selectedDashboardDate} onChange={e => { const day = e.target.value; setSelectedDashboardDate(day); setSelectedAgendaDate(day); setCalendarDate(day); setCalendarView('day') }}/></label></div>
 
         {error && <div className="error-message">{error}<button onClick={() => setError('')}>Fechar</button></div>}
         {notice && (section === 'agenda' || !notice.includes('transferida para hoje')) && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')}>Fechar</button></div>}
