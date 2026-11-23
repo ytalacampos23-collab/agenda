@@ -859,9 +859,25 @@ export default function App() {
           for (const [path, entry] of Object.entries(zip.files)) {
             if (entry.dir || !path.toLowerCase().endsWith('.xml')) continue
             const xml = await entry.async('string')
-            const normalizedXml = xml
+            let normalizedXml = xml
               .replace(/xmlns:x=(["'])http:\/\/schemas\.openxmlformats\.org\/spreadsheetml\/2006\/main\1/g, 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"')
               .replace(/(<\/?)(?:x):/g, '$1')
+            // Os relatórios de origem usam Target absoluto nas relações OOXML.
+            // O ExcelJS espera caminhos relativos ao arquivo .rels de origem.
+            if (path.toLowerCase().endsWith('.rels')) {
+              const relMarker = path.lastIndexOf('/_rels/')
+              const sourcePath = relMarker >= 0
+                ? path.slice(0, relMarker + 1) + path.slice(relMarker + 7).replace(/\.rels$/i, '')
+                : path.startsWith('_rels/') ? path.slice('_rels/'.length).replace(/\.rels$/i, '') : ''
+              const sourceDir = sourcePath.split('/').slice(0, -1).filter(Boolean)
+              normalizedXml = normalizedXml.replace(/Target="(\/(?!\/)[^"]+)"/g, (_match, target: string) => {
+                const targetParts = target.slice(1).split('/').filter(Boolean)
+                let common = 0
+                while (common < sourceDir.length && common < targetParts.length && sourceDir[common] === targetParts[common]) common++
+                const relative = [...Array(sourceDir.length - common).fill('..'), ...targetParts.slice(common)].join('/')
+                return 'Target="' + relative + '"'
+              })
+            }
             zip.file(path, normalizedXml)
           }
           const normalizedFile = await zip.generateAsync({ type: 'uint8array' })
