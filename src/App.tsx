@@ -820,11 +820,11 @@ export default function App() {
       const clientsByPair = new Map<string, Set<string>>()
       worksheet.eachRow((row, rowNumber) => {
         if (rowNumber <= headerRow) return
-        const installation = String(auditCellValue(row.getCell(installationCol)) ?? '').replace(/\\.0$/, '').replace(/[^\\dA-Za-z]/g, '')
-        const uc = String(auditCellValue(row.getCell(ucCol)) ?? '').replace(/\\.0$/, '').replace(/[^\\dA-Za-z]/g, '')
+        const installation = String(auditCellValue(row.getCell(installationCol)) ?? '').replace(/\.0$/, '').replace(/[^\dA-Za-z]/g, '')
+        const uc = String(auditCellValue(row.getCell(ucCol)) ?? '').replace(/\.0$/, '').replace(/[^\dA-Za-z]/g, '')
         if (!installation || !uc) return
         const rawMonth = auditCellValue(row.getCell(referenceCol))
-        const month = parseAuditMonth(typeof rawMonth === 'string' && /^\\d+(?:\\.\\d+)?$/.test(rawMonth.trim()) ? Number(rawMonth) : rawMonth)
+        const month = parseAuditMonth(typeof rawMonth === 'string' && /^\d+(?:\.\d+)?$/.test(rawMonth.trim()) ? Number(rawMonth) : rawMonth)
         if (month === null) { invalidRows++; return }
         const client = String(clientCol ? auditCellValue(row.getCell(clientCol)) ?? '' : '').trim()
         records.push({ rowNumber, installation, uc, client, month })
