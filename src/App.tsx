@@ -843,79 +843,155 @@ export default function App() {
     setError('')
     setNotice('')
   }
-  const normalizeContractAuditKey = (value: unknown) => String(value ?? '').replace(/\\.0$/, '').replace(/[^\\dA-Za-z]/g, '').trim()
+  const normalizeContractAuditKey = (value: unknown) => String(value ?? '').trim().replace(/\.0$/, '').replace(/[^\dA-Za-z]/g, '')
+  type ParsedXlsxRow = { number: number; cells: Map<number, string> }
+  type ParsedXlsxSheet = { name: string; rows: ParsedXlsxRow[] }
+  const parseXlsxXml = (xml: string, part: string) => {
+    const doc = new DOMParser().parseFromString(xml.replace(/^\uFEFF/, ''), 'application/xml')
+    if (doc.getElementsByTagName('parsererror').length) throw new Error('XML inválido no componente ' + part + '.')
+    return doc
+  }
+  const xmlElements = (node: Document | Element, localName: string) =>
+    Array.from(node.getElementsByTagNameNS('*', localName))
+  const resolveXlsxTarget = (sourcePart: string, target: string) => {
+    const clean = target.replace(/\\/g, '/')
+    if (clean.startsWith('/')) return clean.slice(1)
+    const parts = sourcePart.split('/').slice(0, -1)
+    for (const part of clean.split('/')) {
+      if (!part || part === '.') continue
+      if (part === '..') parts.pop()
+      else parts.push(part)
+    }
+    return parts.join('/')
+  }
+  async function readXlsxSheets(file: File): Promise<ParsedXlsxSheet[]> {
+    const zip = await JSZip.loadAsync(await file.arrayBuffer())
+    const readXml = async (path: string) => {
+      const entry = zip.file(path)
+      if (!entry) throw new Error('Componente ausente no Excel: ' + path)
+      return parseXlsxXml(await entry.async('string'), path)
+    }
+    const workbook = await readXml('xl/workbook.xml')
+    const relationships = await readXml('xl/_rels/workbook.xml.rels')
+    const relationMap = new Map<string, string>()
+    for (const rel of xmlElements(relationships, 'Relationship')) {
+      const id = rel.getAttribute('Id')
+      const target = rel.getAttribute('Target')
+      if (id && target) relationMap.set(id, resolveXlsxTarget('xl/workbook.xml', target))
+    }
+    const sharedStrings: string[] = []
+    if (zip.file('xl/sharedStrings.xml')) {
+      const shared = await readXml('xl/sharedStrings.xml')
+      for (const item of xmlElements(shared, 'si')) {
+        sharedStrings.push(xmlElements(item, 't').map(t => t.textContent ?? '').join(''))
+      }
+    }
+    const sheets: ParsedXlsxSheet[] = []
+    for (const sheetNode of xmlElements(workbook, 'sheet')) {
+      const name = sheetNode.getAttribute('name') || 'Planilha ' + (sheets.length + 1)
+      const relationId = sheetNode.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id')
+        || sheetNode.getAttribute('r:id')
+      const sheetPath = relationId ? relationMap.get(relationId) : undefined
+      if (!sheetPath) continue
+      const sheetXml = await readXml(sheetPath)
+      const sheetData = xmlElements(sheetXml, 'sheetData')[0]
+      if (!sheetData) continue
+      const rows: ParsedXlsxRow[] = []
+      for (const rowNode of xmlElements(sheetData, 'row')) {
+        const rowNumber = Number(rowNode.getAttribute('r')) || rows.length + 1
+        const cells = new Map<number, string>()
+        let fallbackColumn = 0
+        for (const cellNode of xmlElements(rowNode, 'c')) {
+          const ref = cellNode.getAttribute('r') || ''
+          const letters = ref.match(/[A-Z]+/i)?.[0] || ''
+          let column = 0
+          for (const letter of letters.toUpperCase()) column = column * 26 + letter.charCodeAt(0) - 64
+          if (!column) column = fallbackColumn + 1
+          fallbackColumn = column
+          const type = cellNode.getAttribute('t') || ''
+          const valueNode = xmlElements(cellNode, 'v')[0]
+          let value = valueNode?.textContent ?? ''
+          if (type === 's' && value !== '') {
+            const index = Number(value)
+            value = Number.isInteger(index) ? (sharedStrings[index] ?? '') : ''
+          } else if (type === 'inlineStr') {
+            const inline = xmlElements(cellNode, 'is')[0]
+            value = inline ? xmlElements(inline, 't').map(t => t.textContent ?? '').join('') : ''
+          } else if (type === 'b') {
+            value = value === '1' ? 'TRUE' : 'FALSE'
+          }
+          cells.set(column, value)
+        }
+        rows.push({ number: rowNumber, cells })
+      }
+      sheets.push({ name, rows })
+    }
+    if (!sheets.length) throw new Error('O arquivo não contém abas de dados reconhecidas.')
+    return sheets
+  }
   async function auditContracts(contractFile?: File, invoiceFile?: File) {
     if (!contractFile || !invoiceFile) return
     setError(''); setNotice(''); setContractAuditResult(null); setContractAuditBusy(true)
     const validFile = (file: File) => file.name.toLowerCase().endsWith('.xlsx') && file.size > 0 && file.size <= 10 * 1024 * 1024
     if (!validFile(contractFile) || !validFile(invoiceFile)) { setError('Envie duas planilhas .xlsx válidas, com até 10 MB cada.'); setContractAuditBusy(false); return }
     try {
-      const loadWorkbook = async (file: File, label: string) => {
-        const workbook = new ExcelJS.Workbook()
-        try {
-          // Alguns relatórios exportados usam prefixo XML "x:" no namespace principal.
-          // O ExcelJS não reconhece corretamente essa variação; normalizamos apenas os XMLs do pacote.
-          const zip = await JSZip.loadAsync(await file.arrayBuffer())
-          for (const [path, entry] of Object.entries(zip.files)) {
-            if (entry.dir || !path.toLowerCase().endsWith('.xml')) continue
-            const xml = await entry.async('string')
-            let normalizedXml = xml
-              .replace(/xmlns:x=(["'])http:\/\/schemas\.openxmlformats\.org\/spreadsheetml\/2006\/main\1/g, 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"')
-              .replace(/(<\/?)(?:x):/g, '$1')
-            // Os relatórios de origem usam Target absoluto nas relações OOXML.
-            // O ExcelJS espera caminhos relativos ao arquivo .rels de origem.
-            if (path.toLowerCase().endsWith('.rels')) {
-              const relMarker = path.lastIndexOf('/_rels/')
-              const sourcePath = relMarker >= 0
-                ? path.slice(0, relMarker + 1) + path.slice(relMarker + 7).replace(/\.rels$/i, '')
-                : path.startsWith('_rels/') ? path.slice('_rels/'.length).replace(/\.rels$/i, '') : ''
-              const sourceDir = sourcePath.split('/').slice(0, -1).filter(Boolean)
-              normalizedXml = normalizedXml.replace(/Target="(\/(?!\/)[^"]+)"/g, (_match, target: string) => {
-                const targetParts = target.slice(1).split('/').filter(Boolean)
-                let common = 0
-                while (common < sourceDir.length && common < targetParts.length && sourceDir[common] === targetParts[common]) common++
-                const relative = [...Array(sourceDir.length - common).fill('..'), ...targetParts.slice(common)].join('/')
-                return 'Target="' + relative + '"'
-              })
-            }
-            zip.file(path, normalizedXml)
+      const [contractSheets, invoiceSheets] = await Promise.all([readXlsxSheets(contractFile), readXlsxSheets(invoiceFile)])
+      const findHeaders = (sheets: ParsedXlsxSheet[], expected: string[]) => {
+        for (const sheet of sheets) {
+          for (const row of sheet.rows.slice(0, 30)) {
+            const map = new Map<string, number>()
+            for (const [column, value] of row.cells) map.set(normalizeAuditText(value), column)
+            if (expected.every(header => map.has(normalizeAuditText(header)))) return { sheet, row: row.number, map }
           }
-          const normalizedFile = await zip.generateAsync({ type: 'uint8array' })
-          await workbook.xlsx.load(normalizedFile)
-        } catch (cause) {
-          console.error('Falha ao carregar planilha de ' + label, cause)
-          const technicalDetail = cause instanceof Error ? cause.message : String(cause)
-          throw new Error('Falha na leitura da planilha de ' + label + '. Detalhe técnico: ' + technicalDetail)
-        }
-        if (!workbook.worksheets || workbook.worksheets.length === 0) {
-          throw new Error('A planilha de ' + label + ' não contém abas de dados reconhecidas.')
-        }
-        return workbook
-      }
-      const contractsWb = await loadWorkbook(contractFile, 'contratos')
-      const invoicesWb = await loadWorkbook(invoiceFile, 'faturas')
-      const findHeaders = (sheet: ExcelJS.Worksheet, expected: string[]) => {
-        for (let r=1;r<=Math.min(sheet.rowCount,20);r++) {
-          const map = new Map<string,number>(); sheet.getRow(r).eachCell((cell,col)=>map.set(normalizeAuditText(auditCellValue(cell)),col))
-          if (expected.every(h=>map.has(normalizeAuditText(h)))) return {row:r,map}
         }
         return null
       }
-      const contractSheet = contractsWb.worksheets[0], invoiceSheet = invoicesWb.worksheets[0]
-      if (!contractSheet || !invoiceSheet) throw new Error('Uma das planilhas está sem abas de dados.')
-      const contractHead=findHeaders(contractSheet,['Número instalação','Nº unidade consumidora','Titular conta','Situação Contrato'])
-      const invoiceHead=findHeaders(invoiceSheet,['Instalação','Unid. Consumidora','Geração de Faturas','Status da Fatura','Status de Boleto Gerado'])
-      if (!contractHead) throw new Error('Não localizei na planilha de contratos as colunas Número instalação, Nº unidade consumidora, Titular conta e Situação Contrato.')
-      if (!invoiceHead) throw new Error('Não localizei na planilha de faturas as colunas Instalação, Unid. Consumidora, Geração de Faturas, Status da Fatura e Status de Boleto Gerado.')
-      const cMap=contractHead.map, iMap=invoiceHead.map
-      const activeContracts=new Map<string,{client:string;installation:string;uc:string}>(); let duplicates=0, skipped=0
-      contractSheet.eachRow((row,r)=>{if(r<=contractHead.row)return;const situation=normalizeAuditText(auditCellValue(row.getCell(cMap.get('situacao contrato')!)));if(situation!=='ativo')return;const inst=normalizeContractAuditKey(auditCellValue(row.getCell(cMap.get('numero instalacao')!))),uc=normalizeContractAuditKey(auditCellValue(row.getCell(cMap.get('no unidade consumidora')!))),client=String(auditCellValue(row.getCell(cMap.get('titular conta')!))??'').trim();if(!inst||!uc){skipped++;return}const key=inst+'|'+uc;if(activeContracts.has(key))duplicates++;else activeContracts.set(key,{client,installation:inst,uc})})
-      const billed=new Set<string>(); let ignoredInvoiceRows=0
-      invoiceSheet.eachRow((row,r)=>{if(r<=invoiceHead.row)return;const inst=normalizeContractAuditKey(auditCellValue(row.getCell(iMap.get('instalacao')!))),uc=normalizeContractAuditKey(auditCellValue(row.getCell(iMap.get('unid consumidora')!)));if(!inst||!uc)return;const generation=normalizeAuditText(auditCellValue(row.getCell(iMap.get('geracao de faturas')!))),invoiceStatus=normalizeAuditText(auditCellValue(row.getCell(iMap.get('status da fatura')!))),boletoStatus=normalizeAuditText(auditCellValue(row.getCell(iMap.get('status de boleto gerado')!)));if(invoiceStatus.includes('cancelado')||generation!=='ativo'||boletoStatus!=='sucesso'){ignoredInvoiceRows++;return}billed.add(inst+'|'+uc)})
-      const missing=[...activeContracts.entries()].filter(([key])=>!billed.has(key)).map(([,value])=>value).sort((x,y)=>x.client.localeCompare(y.client,'pt-BR'))
-      const warnings:string[]=[];if(duplicates)warnings.push(duplicates+' contrato(s) ativo(s) duplicado(s) pela combinação instalação + UC foram consolidados.');if(skipped)warnings.push(skipped+' contrato(s) ativo(s) sem instalação ou UC foram ignorados.');if(ignoredInvoiceRows)warnings.push(ignoredInvoiceRows+' linha(s) de faturas sem geração ativa, boleto com sucesso ou com status cancelado não foram consideradas como faturamento válido.')
-      setContractAuditResult({fileNames:[contractFile.name,invoiceFile.name],total:activeContracts.size,matched:activeContracts.size-missing.length,missing,warnings});setNotice('Comparativo concluído localmente. Os arquivos não foram enviados ao servidor.')
-    } catch(err){setError(err instanceof Error?err.message:'Falha ao comparar as planilhas.')} finally{setContractAuditBusy(false)}
+      const contractHead = findHeaders(contractSheets, ['Número instalação', 'Nº unidade consumidora', 'Titular conta', 'Situação Contrato'])
+      const invoiceHead = findHeaders(invoiceSheets, ['Instalação', 'Unid. Consumidora', 'Geração de Faturas', 'Status da Fatura', 'Status de Boleto Gerado'])
+      if (!contractHead) throw new Error('Não localizei na planilha de contratos as colunas Número instalação, Nº unidade consumidora, Titular conta e Situação Contrato. Abas lidas: ' + contractSheets.map(s => s.name).join(', '))
+      if (!invoiceHead) throw new Error('Não localizei na planilha de faturas as colunas Instalação, Unid. Consumidora, Geração de Faturas, Status da Fatura e Status de Boleto Gerado. Abas lidas: ' + invoiceSheets.map(s => s.name).join(', '))
+      const get = (row: ParsedXlsxRow, map: Map<string, number>, header: string) => row.cells.get(map.get(normalizeAuditText(header)) ?? -1) ?? ''
+      const activeContracts = new Map<string, { client: string; installation: string; uc: string }>()
+      let duplicates = 0, skipped = 0
+      for (const row of contractHead.sheet.rows) {
+        if (row.number <= contractHead.row) continue
+        if (normalizeAuditText(get(row, contractHead.map, 'Situação Contrato')) !== 'ativo') continue
+        const installation = normalizeContractAuditKey(get(row, contractHead.map, 'Número instalação'))
+        const uc = normalizeContractAuditKey(get(row, contractHead.map, 'Nº unidade consumidora'))
+        const client = get(row, contractHead.map, 'Titular conta').trim()
+        if (!installation || !uc) { skipped++; continue }
+        const key = installation + '|' + uc
+        if (activeContracts.has(key)) duplicates++
+        else activeContracts.set(key, { client, installation, uc })
+      }
+      if (!activeContracts.size) throw new Error('A planilha foi lida, mas nenhum contrato com Situação Contrato = Ativo e instalação + UC preenchidas foi encontrado.')
+      const billed = new Set<string>()
+      let ignoredInvoiceRows = 0, invoiceRowsWithKeys = 0
+      for (const row of invoiceHead.sheet.rows) {
+        if (row.number <= invoiceHead.row) continue
+        const installation = normalizeContractAuditKey(get(row, invoiceHead.map, 'Instalação'))
+        const uc = normalizeContractAuditKey(get(row, invoiceHead.map, 'Unid. Consumidora'))
+        if (!installation || !uc) continue
+        invoiceRowsWithKeys++
+        const generation = normalizeAuditText(get(row, invoiceHead.map, 'Geração de Faturas'))
+        const invoiceStatus = normalizeAuditText(get(row, invoiceHead.map, 'Status da Fatura'))
+        const boletoStatus = normalizeAuditText(get(row, invoiceHead.map, 'Status de Boleto Gerado'))
+        if (invoiceStatus.includes('cancelado') || generation !== 'ativo' || boletoStatus !== 'sucesso') { ignoredInvoiceRows++; continue }
+        billed.add(installation + '|' + uc)
+      }
+      if (!invoiceRowsWithKeys) throw new Error('A aba de faturas foi aberta, mas não há registros com Instalação e Unid. Consumidora preenchidas.')
+      const missing = [...activeContracts.entries()].filter(([key]) => !billed.has(key)).map(([, value]) => value).sort((a, b) => a.client.localeCompare(b.client, 'pt-BR'))
+      const warnings: string[] = []
+      if (duplicates) warnings.push(duplicates + ' contrato(s) ativo(s) duplicado(s) pela combinação instalação + UC foram consolidados.')
+      if (skipped) warnings.push(skipped + ' contrato(s) ativo(s) sem instalação ou UC foram ignorados.')
+      if (ignoredInvoiceRows) warnings.push(ignoredInvoiceRows + ' linha(s) de faturas sem geração ativa, boleto com sucesso ou com status cancelado não foram consideradas como faturamento válido.')
+      setContractAuditResult({ fileNames: [contractFile.name, invoiceFile.name], total: activeContracts.size, matched: activeContracts.size - missing.length, missing, warnings })
+      setNotice('Comparativo concluído. ' + activeContracts.size.toLocaleString('pt-BR') + ' contratos ativos comparados com ' + billed.size.toLocaleString('pt-BR') + ' combinações com fatura válida. Os arquivos foram processados localmente.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao comparar as planilhas.')
+    } finally {
+      setContractAuditBusy(false)
+    }
   }
   function exportContractAudit() { if(!contractAuditResult)return;const csv=['Cliente;Instalação;Unid. Consumidora',...contractAuditResult.missing.map(x=>[x.client,x.installation,x.uc].map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';'))].join('\\r\\n');const blob=new Blob(['\\ufeff'+csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='contratos_sem_faturas.csv';link.click();window.setTimeout(()=>URL.revokeObjectURL(url),1000) }
 
