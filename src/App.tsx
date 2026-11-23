@@ -857,7 +857,8 @@ export default function App() {
           await workbook.xlsx.load(await file.arrayBuffer())
         } catch (cause) {
           console.error('Falha ao carregar planilha de ' + label, cause)
-          throw new Error('Não foi possível ler o conteúdo da planilha de ' + label + '. O arquivo enviado é um .xlsx válido; tente novamente após atualizar a página. Se persistir, verificaremos o detalhe técnico do erro.')
+          const technicalDetail = cause instanceof Error ? cause.message : String(cause)
+          throw new Error('Falha na leitura da planilha de ' + label + '. Detalhe técnico: ' + technicalDetail)
         }
         if (!workbook.worksheets || workbook.worksheets.length === 0) {
           throw new Error('A planilha de ' + label + ' não contém abas de dados reconhecidas.')
