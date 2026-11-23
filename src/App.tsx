@@ -993,7 +993,62 @@ export default function App() {
       setContractAuditBusy(false)
     }
   }
-  function exportContractAudit() { if(!contractAuditResult)return;const csv=['Cliente;Instalação;Unid. Consumidora',...contractAuditResult.missing.map(x=>[x.client,x.installation,x.uc].map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';'))].join('\\r\\n');const blob=new Blob(['\\ufeff'+csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='contratos_sem_faturas.csv';link.click();window.setTimeout(()=>URL.revokeObjectURL(url),1000) }
+  async function exportContractAudit() {
+    if (!contractAuditResult) return
+    try {
+      const workbook = new ExcelJS.Workbook()
+      workbook.creator = 'Agenda Virtual'
+      workbook.created = new Date()
+      workbook.modified = new Date()
+      const sheet = workbook.addWorksheet('Contratos sem faturas', {
+        views: [{ state: 'frozen', ySplit: 1, xSplit: 0, showGridLines: false }],
+        pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+      })
+      sheet.columns = [
+        { header: 'Cliente', key: 'client', width: 48 },
+        { header: 'Instalação', key: 'installation', width: 22 },
+        { header: 'Unid. Consumidora', key: 'uc', width: 24 },
+      ]
+      sheet.addRows(contractAuditResult.missing.map(item => ({
+        client: item.client,
+        installation: item.installation,
+        uc: item.uc,
+      })))
+      const header = sheet.getRow(1)
+      header.height = 28
+      header.eachCell(cell => {
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 }
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF243746' } }
+        cell.alignment = { vertical: 'middle', horizontal: 'left' }
+        cell.border = { bottom: { style: 'medium', color: { argb: 'FF19A7A0' } } }
+      })
+      for (let row = 2; row <= sheet.rowCount; row++) {
+        const current = sheet.getRow(row)
+        current.height = 21
+        current.alignment = { vertical: 'middle' }
+        if (row % 2 === 0) {
+          current.eachCell(cell => {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F6F8' } }
+          })
+        }
+        current.getCell(2).numFmt = '@'
+        current.getCell(3).numFmt = '@'
+      }
+      sheet.autoFilter = { from: 'A1', to: 'C' + Math.max(1, sheet.rowCount) }
+      sheet.views = [{ state: 'frozen', ySplit: 1, showGridLines: false }]
+      const buffer = await workbook.xlsx.writeBuffer()
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'contratos_sem_faturas.xlsx'
+      link.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+      setNotice('Planilha Excel formatada exportada com sucesso.')
+    } catch (err) {
+      setError('Não foi possível gerar a planilha Excel: ' + (err instanceof Error ? err.message : 'erro inesperado.'))
+    }
+  }
 
 
   function exportVisitCsv() {
