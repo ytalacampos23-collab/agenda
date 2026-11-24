@@ -8,7 +8,7 @@ type TaskStatus = 'A fazer' | 'Em andamento' | 'Concluído'
 type Priority = 'Baixa' | 'Média' | 'Alta' | 'Urgente'
 type Task = { id: string; title: string; description: string | null; category: string; due_date: string; due_time: string | null; status: TaskStatus; priority: Priority; assigned_to?: string | null; show_on_calendar?: boolean; deleted_at?: string | null }
 type PendingChange = { id: string; task: Task; deleted_at: string | null }
-type Visit = { id: string; user_id: string; visit_date: string; title: string; participants: string | null; notes: string | null; created_at?: string }
+type Visit = { id: string; user_id: string; visit_date: string; title: string; participants: string | null; cnpj_wisecoop: string | null; notes: string | null; created_at?: string }
 type VisitTopic = { id: string; visit_id: string; user_id: string; category?: string; title: string; description: string | null; responsible: string | null; protocol: string | null; due_date: string | null; status: 'Pendente' | 'Em análise' | 'Em andamento' | 'Próxima semana' | 'Acompanhar Chamado' | 'Resolvido' | 'Não se aplica'; observations: string | null; origin_topic_id?: string | null }
 type LibraryItem = { id: string; user_id: string; kind: 'message' | 'documents'; title: string; content: string; created_at?: string; updated_at?: string }
 type AgendaNote = { id: string; user_id: string; title: string; content: string; created_at?: string; updated_at?: string }
@@ -224,6 +224,7 @@ export default function App() {
   const [visitDate, setVisitDate] = useState(today())
   const [visitTitle, setVisitTitle] = useState('Visita à Cemig')
   const [participants, setParticipants] = useState('')
+  const [visitCnpj, setVisitCnpj] = useState('')
   const [visitNotes, setVisitNotes] = useState('')
   const [visitFormOpen, setVisitFormOpen] = useState(false)
   const [globalTopicFilterOpen, setGlobalTopicFilterOpen] = useState(false)
@@ -703,7 +704,7 @@ export default function App() {
   function addVisit(event: FormEvent) {
     event.preventDefault()
     if (!userId || !visitTitle.trim()) return
-    const visit: Visit = { id: crypto.randomUUID(), user_id: userId, visit_date: visitDate, title: visitTitle.trim(), participants: participants.trim() || null, notes: visitNotes.trim() || null }
+    const visit: Visit = { id: crypto.randomUUID(), user_id: userId, visit_date: visitDate, title: visitTitle.trim(), participants: participants.trim() || null, cnpj_wisecoop: visitCnpj.trim() || null, notes: visitNotes.trim() || null }
     const eligibleStatuses: VisitTopic['status'][] = ['Pendente', 'Em andamento', 'Próxima semana']
     const sources = visitTopics.filter(topic => eligibleStatuses.includes(topic.status) && (visits.find(item => item.id === topic.visit_id)?.visit_date ?? '') < visit.visit_date && !visitTopics.some(copy => copy.origin_topic_id === topic.id))
     const carriedTopics: VisitTopic[] = sources.filter(topic => !visitTopics.some(copy => copy.visit_id === visit.id && copy.origin_topic_id === topic.id)).map(topic => ({
@@ -721,14 +722,14 @@ export default function App() {
         queueVisitChange('topic_transfers', transfer)
       })
     }
-    setVisitTitle('Visita à Cemig'); setParticipants(''); setVisitNotes('')
+    setVisitTitle('Visita à Cemig'); setParticipants(''); setVisitCnpj(''); setVisitNotes('')
     setNotice(isOnline ? `Ata registrada e sincronizada. ${carriedTopics.length ? carriedTopics.length + ' assunto(s) transferido(s) automaticamente.' : 'Nenhum assunto elegível para continuidade.'}` : `Ata salva neste dispositivo. ${carriedTopics.length ? carriedTopics.length + ' assunto(s) transferido(s) automaticamente.' : 'Nenhum assunto elegível para continuidade.'} Aguardará sincronização.`)
   }
 
   function saveEditedVisit(event: FormEvent) {
     event.preventDefault()
     if (!userId || !editingVisit || !editingVisit.title.trim()) return
-    const updated: Visit = { ...editingVisit, title: editingVisit.title.trim(), participants: editingVisit.participants?.trim() || null, notes: editingVisit.notes?.trim() || null }
+    const updated: Visit = { ...editingVisit, title: editingVisit.title.trim(), participants: editingVisit.participants?.trim() || null, cnpj_wisecoop: editingVisit.cnpj_wisecoop?.trim() || null, notes: editingVisit.notes?.trim() || null }
     const next = visits.map(item => item.id === updated.id ? updated : item).sort((a,b) => b.visit_date.localeCompare(a.visit_date))
     setVisits(next); saveVisitsCache(userId, next); queueVisitChange('visits', updated)
     setEditingVisit(null)
@@ -1351,7 +1352,7 @@ export default function App() {
       '</style></head><body><h1>' + escapeHtml(visit.title) +
       '</h1><p class="meta">Data: ' + escapeHtml(new Date(visit.visit_date + 'T12:00:00').toLocaleDateString('pt-BR')) +
       '<br>Participantes: ' + escapeHtml(visit.participants) +
-      '<br>CNPJ Wisecoop: ' +
+      '<br>CNPJ Wisecoop: ' + escapeHtml(visit.cnpj_wisecoop) +
       '</p><h2>Observações gerais</h2><div class="observations">' + richContent(visit.notes) +
       '</div><h2>Assuntos registrados</h2><table><thead><tr><th style="width:11%">Categoria</th><th style="width:22%">Assunto / descrição</th><th style="width:12%">Responsável</th><th style="width:12%">Protocolo</th><th style="width:9%">Prazo</th><th style="width:12%">Status</th><th style="width:22%">Observações</th></tr></thead><tbody>' +
       rows.map(topic => '<tr><td>' + escapeHtml(topic.category ?? '') +
@@ -1381,7 +1382,7 @@ export default function App() {
     const destination: Visit = targetVisit ?? {
       id: crypto.randomUUID(), user_id: userId, visit_date: scheduledDate,
       title: 'Ata programada - ' + new Date(scheduledDate + 'T12:00:00').toLocaleDateString('pt-BR'),
-      participants: null, notes: 'Ata criada automaticamente para receber assunto programado.'
+      participants: null, cnpj_wisecoop: null, notes: 'Ata criada automaticamente para receber assunto programado.'
     }
     if (visitTopics.some(item => item.visit_id === destination.id && item.origin_topic_id === source.id)) {
       setNotice('Este assunto já está programado para essa ata.')
@@ -1616,6 +1617,7 @@ export default function App() {
               <label>Data da visita<input type="date" required value={visitDate} onChange={e => setVisitDate(e.target.value)}/></label>
               <label className="wide">Título da ata<input required value={visitTitle} onChange={e => setVisitTitle(e.target.value)}/></label>
               <label className="wide">Participantes<input value={participants} onChange={e => setParticipants(e.target.value)} placeholder="Nomes dos participantes"/></label>
+               <label className="wide">CNPJ Wisecoop<input inputMode="numeric" value={visitCnpj} onChange={e => setVisitCnpj(e.target.value)} placeholder="00.000.000/0000-00" maxLength={18}/></label>
               <div className="wide notes-field"><span className="notes-field-title">Observações gerais</span><div className="notes-toolbar"><button type="button" className="format-button" onMouseDown={e => e.preventDefault()} onClick={() => applyBoldToNotes(visitNotesRef, visitNotes, setVisitNotes)}><strong>B</strong> Negrito</button><button type="button" className="format-button highlight-format" onMouseDown={e => e.preventDefault()} onClick={() => applyHighlightToNotes(visitNotesRef, visitNotes, setVisitNotes)}>Marca-texto</button><button type="button" className="format-button" title="Título" onMouseDown={e => e.preventDefault()} onClick={() => applyStructureToNotes(visitNotesRef, 'formatBlock', 'h2', setVisitNotes)}>Título</button><button type="button" className="format-button" title="Subtítulo" onMouseDown={e => e.preventDefault()} onClick={() => applyStructureToNotes(visitNotesRef, 'formatBlock', 'h3', setVisitNotes)}>Subtítulo</button><button type="button" className="format-button" title="Lista com marcadores" onMouseDown={e => e.preventDefault()} onClick={() => applyStructureToNotes(visitNotesRef, 'insertUnorderedList', undefined, setVisitNotes)}>• Lista</button><button type="button" className="format-button" title="Lista numerada" onMouseDown={e => e.preventDefault()} onClick={() => applyStructureToNotes(visitNotesRef, 'insertOrderedList', undefined, setVisitNotes)}>1. Lista</button><small>Enter cria uma nova linha. Use os botões para organizar títulos e listas.</small></div><RichNotesEditor editorRef={visitNotesRef} value={visitNotes} onChange={setVisitNotes} placeholder="Registre aqui todas as informações importantes da visita..."/></div>
               <div className="wide form-action"><button className="primary-button"><Plus size={17}/>Salvar visita</button></div>
             </form>}
@@ -1631,6 +1633,7 @@ export default function App() {
               <label>Data da visita<input type="date" required value={editingVisit.visit_date} onChange={e => setEditingVisit({ ...editingVisit, visit_date: e.target.value })}/></label>
               <label className="wide">Título da ata<input required value={editingVisit.title} onChange={e => setEditingVisit({ ...editingVisit, title: e.target.value })}/></label>
               <label className="wide">Participantes<input value={editingVisit.participants ?? ''} onChange={e => setEditingVisit({ ...editingVisit, participants: e.target.value })}/></label>
+               <label className="wide">CNPJ Wisecoop<input inputMode="numeric" value={editingVisit.cnpj_wisecoop ?? ''} onChange={e => setEditingVisit({ ...editingVisit, cnpj_wisecoop: e.target.value })} placeholder="00.000.000/0000-00" maxLength={18}/></label>
               <div className="wide notes-field"><span className="notes-field-title">Observações gerais</span><div className="notes-toolbar"><button type="button" className="format-button" onMouseDown={e => e.preventDefault()} onClick={() => applyBoldToNotes(editVisitNotesRef, editingVisit.notes ?? '', value => setEditingVisit({ ...editingVisit, notes: value }))}><strong>B</strong> Negrito</button><button type="button" className="format-button highlight-format" onMouseDown={e => e.preventDefault()} onClick={() => applyHighlightToNotes(editVisitNotesRef, editingVisit.notes ?? '', value => setEditingVisit({ ...editingVisit, notes: value }))}>Marca-texto</button><button type="button" className="format-button" title="Título" onMouseDown={e => e.preventDefault()} onClick={() => applyStructureToNotes(editVisitNotesRef, 'formatBlock', 'h2', value => setEditingVisit({ ...editingVisit, notes: value }))}>Título</button><button type="button" className="format-button" title="Subtítulo" onMouseDown={e => e.preventDefault()} onClick={() => applyStructureToNotes(editVisitNotesRef, 'formatBlock', 'h3', value => setEditingVisit({ ...editingVisit, notes: value }))}>Subtítulo</button><button type="button" className="format-button" title="Lista com marcadores" onMouseDown={e => e.preventDefault()} onClick={() => applyStructureToNotes(editVisitNotesRef, 'insertUnorderedList', undefined, value => setEditingVisit({ ...editingVisit, notes: value }))}>• Lista</button><button type="button" className="format-button" title="Lista numerada" onMouseDown={e => e.preventDefault()} onClick={() => applyStructureToNotes(editVisitNotesRef, 'insertOrderedList', undefined, value => setEditingVisit({ ...editingVisit, notes: value }))}>1. Lista</button><small>Enter cria uma nova linha. Use os botões para organizar títulos e listas.</small></div><RichNotesEditor editorRef={editVisitNotesRef} value={editingVisit.notes} onChange={value => setEditingVisit({ ...editingVisit, notes: value })}/></div>
               <div className="wide edit-actions"><button className="primary-button" type="submit">Salvar alterações</button><button className="secondary-button" type="button" onClick={() => setEditingVisit(null)}>Cancelar</button></div>
             </form>}
