@@ -219,7 +219,7 @@ export default function App() {
   const [topicCategoryFilter, setTopicCategoryFilter] = useState('Todas')
   const [globalTopicStatusFilter, setGlobalTopicStatusFilter] = useState('Todos')
   const [globalTopicCategoryFilter, setGlobalTopicCategoryFilter] = useState('Todas')
-  const [dashboardVisitFilter, setDashboardVisitFilter] = useState<'all' | 'visits' | 'Pendente' | 'Em análise' | 'Em andamento' | 'Acompanhar Chamado' | 'Resolvido'>('all')
+  const [dashboardVisitFilter, setDashboardVisitFilter] = useState<'all' | 'visits' | 'Pendente' | 'Em análise' | 'Em andamento' | 'Próxima semana' | 'Acompanhar Chamado' | 'Resolvido'>('all')
   const [selectedDashboardDate, setSelectedDashboardDate] = useState(today())
   const [visitDate, setVisitDate] = useState(today())
   const [visitTitle, setVisitTitle] = useState('Visita à Cemig')
@@ -1354,7 +1354,7 @@ export default function App() {
       '<br>CNPJ Wisecoop: ' +
       '</p><h2>Observações gerais</h2><div class="observations">' + richContent(visit.notes) +
       '</div><h2>Assuntos registrados</h2><table><thead><tr><th style="width:11%">Categoria</th><th style="width:22%">Assunto / descrição</th><th style="width:12%">Responsável</th><th style="width:12%">Protocolo</th><th style="width:9%">Prazo</th><th style="width:12%">Status</th><th style="width:22%">Observações</th></tr></thead><tbody>' +
-      rows.map(topic => '<tr><td>' + escapeHtml(topic.category ?? 'Não categorizado') +
+      rows.map(topic => '<tr><td>' + escapeHtml(topic.category ?? '') +
         '</td><td><strong>' + escapeHtml(topic.title) + '</strong><br>' + escapeHtml(topic.description) +
         '</td><td>' + escapeHtml(topic.responsible) + '</td><td>' + escapeHtml(topic.protocol) +
         '</td><td>' + escapeHtml(topic.due_date) + '</td><td>' + escapeHtml(topic.status) +
