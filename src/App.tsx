@@ -121,9 +121,21 @@ function RichNotesEditor({ editorRef, value, onChange, placeholder }: { editorRe
 }
 const cacheKey = (id: string) => 'wattwise:' + id + ':tasks'
 const queueKey = (id: string) => 'wattwise:' + id + ':queue'
-const readJson = <T,>(key: string, fallback: T): T => { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : fallback } catch { return fallback } }
-const savePending = (id: string, queue: PendingChange[]) => localStorage.setItem(queueKey(id), JSON.stringify(queue))
-const saveTaskCache = (id: string, tasks: Task[]) => localStorage.setItem(cacheKey(id), JSON.stringify(tasks))
+const migrateUserCacheToSession = (id: string) => {
+  const prefix = 'wattwise:' + id + ':'
+  try {
+    Object.keys(localStorage).filter(key => key.startsWith(prefix)).forEach(key => {
+      if (sessionStorage.getItem(key) === null) {
+        const value = localStorage.getItem(key)
+        if (value !== null) sessionStorage.setItem(key, value)
+      }
+      localStorage.removeItem(key)
+    })
+  } catch { /* Cache temporário indisponível. */ }
+}
+const readJson = <T,>(key: string, fallback: T): T => { try { const raw = sessionStorage.getItem(key); return raw ? JSON.parse(raw) as T : fallback } catch { return fallback } }
+const savePending = (id: string, queue: PendingChange[]) => sessionStorage.setItem(queueKey(id), JSON.stringify(queue))
+const saveTaskCache = (id: string, tasks: Task[]) => sessionStorage.setItem(cacheKey(id), JSON.stringify(tasks))
 const visitCacheKey = (id: string) => 'wattwise:' + id + ':visits'
 const topicCacheKey = (id: string) => 'wattwise:' + id + ':visit-topics'
 const visitQueueKey = (id: string) => 'wattwise:' + id + ':visit-queue'
@@ -152,6 +164,7 @@ export default function App() {
   const [pendingCount, setPendingCount] = useState(0)
   const [syncVersion, setSyncVersion] = useState(0)
   const [email, setEmail] = useState('')
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
   const [password, setPassword] = useState('')
   const [authBusy, setAuthBusy] = useState(false)
   const [tasks, setTasks] = useState<Task[]>([])
@@ -305,6 +318,7 @@ export default function App() {
         const { data: userData, error: userError } = await supabase!.auth.getUser()
         if (userError) throw userError
         if (active && userData.user && userData.user.id === sessionData.session.user.id) {
+          migrateUserCacheToSession(userData.user.id)
           setUserEmail(userData.user.email ?? '')
           setUserId(userData.user.id)
           setAuthVerified(true)
@@ -352,7 +366,7 @@ export default function App() {
           const result = change.action === 'delete' ? await supabase!.from(change.table).delete().eq('id', change.id) : await supabase!.from(change.table).upsert(change.record as any, { onConflict: 'id' })
           if (result.error) throw result.error
           visitChanges = visitChanges.filter(item => !(item.table === change.table && item.id === change.id))
-          localStorage.setItem(visitQueueKey(userId), JSON.stringify(visitChanges))
+          sessionStorage.setItem(visitQueueKey(userId), JSON.stringify(visitChanges))
         }
         const result = await supabase!.from('tasks').select('id,title,description,category,due_date,due_time,status,priority,assigned_to,show_on_calendar,deleted_at').order('due_date', { ascending: true })
         if (result.error) throw result.error
@@ -400,14 +414,14 @@ export default function App() {
 
   useEffect(() => { if (userId) setGeneralLibraryItems(readJson<LibraryItem[]>(generalLibraryStorageKey(userId), [])) }, [userId])
 
-  const saveVisitsCache = (id: string, rows: Visit[]) => localStorage.setItem(visitCacheKey(id), JSON.stringify(rows))
-  const saveTopicsCache = (id: string, rows: VisitTopic[]) => localStorage.setItem(topicCacheKey(id), JSON.stringify(rows))
+  const saveVisitsCache = (id: string, rows: Visit[]) => sessionStorage.setItem(visitCacheKey(id), JSON.stringify(rows))
+  const saveTopicsCache = (id: string, rows: VisitTopic[]) => sessionStorage.setItem(topicCacheKey(id), JSON.stringify(rows))
 
   function queueVisitChange(table: PendingVisitChange['table'], record: Visit | VisitTopic | TopicTransfer) {
     if (!userId) return
     const queue = readJson<PendingVisitChange[]>(visitQueueKey(userId), [])
     const next = [...queue.filter(item => !(item.table === table && item.id === record.id)), { table, id: record.id, record, action: 'upsert' as const }]
-    localStorage.setItem(visitQueueKey(userId), JSON.stringify(next))
+    sessionStorage.setItem(visitQueueKey(userId), JSON.stringify(next))
     setPendingCount(readJson<PendingChange[]>(queueKey(userId), []).length + next.length)
     setSyncVersion(v => v + 1)
   }
@@ -417,7 +431,7 @@ export default function App() {
     if (!userId) return
     const queue = readJson<PendingVisitChange[]>(visitQueueKey(userId), [])
     const next = [...queue.filter(item => !(item.table === table && item.id === id)), { table, id, record, action: 'delete' as const }]
-    localStorage.setItem(visitQueueKey(userId), JSON.stringify(next))
+    sessionStorage.setItem(visitQueueKey(userId), JSON.stringify(next))
     setPendingCount(readJson<PendingChange[]>(queueKey(userId), []).length + next.length)
     setSyncVersion(v => v + 1)
   }
@@ -461,7 +475,7 @@ export default function App() {
       const payload: LibraryItem = { id: editingGeneralLibraryItem ?? crypto.randomUUID(), user_id: userId, kind: generalLibraryKind, title: generalLibraryTitle.trim(), content: generalLibraryContent.trim(), updated_at: new Date().toISOString() }
       const updated = [payload, ...generalLibraryItems.filter(item => item.id !== payload.id)]
       setGeneralLibraryItems(updated)
-      localStorage.setItem(generalLibraryStorageKey(userId), JSON.stringify(updated))
+      sessionStorage.setItem(generalLibraryStorageKey(userId), JSON.stringify(updated))
       resetGeneralLibraryForm(); setNotice('Registro salvo na Biblioteca.')
     } catch { setError('Não foi possível salvar na Biblioteca.') }
     finally { setGeneralLibraryBusy(false) }
@@ -469,7 +483,7 @@ export default function App() {
   function deleteGeneralLibraryItem(item: LibraryItem) {
     if (!userId || !window.confirm('Excluir "' + item.title + '" da Biblioteca?')) return
     const updated = generalLibraryItems.filter(entry => entry.id !== item.id)
-    setGeneralLibraryItems(updated); localStorage.setItem(generalLibraryStorageKey(userId), JSON.stringify(updated))
+    setGeneralLibraryItems(updated); sessionStorage.setItem(generalLibraryStorageKey(userId), JSON.stringify(updated))
     if (editingGeneralLibraryItem === item.id) resetGeneralLibraryForm()
     setNotice('Registro excluído da Biblioteca.')
   }
@@ -602,10 +616,18 @@ export default function App() {
     setAuthBusy(true); setError(''); setNotice('')
     try {
       if (!navigator.onLine) throw new Error('É necessário estar conectado à internet para entrar no Watt-Wise.')
-      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
-      if (error) throw error
+      if (authMode === 'signup') {
+        if (password.length < 12) throw new Error('A senha precisa ter pelo menos 12 caracteres.')
+        const { data, error } = await supabase.auth.signUp({ email: email.trim(), password })
+        if (error) throw error
+        if (!data.session) { setPassword(''); setNotice('Cadastro iniciado. Confira seu e-mail para confirmar a conta e depois entre.'); return }
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+        if (error) throw error
+      }
       const { data: verified, error: verifyError } = await supabase.auth.getUser()
       if (verifyError || !verified.user) throw verifyError ?? new Error('Não foi possível validar sua conta.')
+      migrateUserCacheToSession(verified.user.id)
       setUserEmail(verified.user.email ?? '')
       setUserId(verified.user.id)
       setAuthVerified(true)
@@ -1349,7 +1371,11 @@ export default function App() {
       const { error } = await supabase.auth.signOut({ scope: 'local' })
       if (error) { setError('Não foi possível sair da conta: ' + error.message); return }
     }
-    Object.keys(localStorage).filter(key => key.startsWith('wattwise:')).forEach(key => localStorage.removeItem(key))
+    if (userId) {
+      const prefix = 'wattwise:' + userId + ':'
+      Object.keys(sessionStorage).filter(key => key.startsWith(prefix)).forEach(key => sessionStorage.removeItem(key))
+      Object.keys(localStorage).filter(key => key.startsWith(prefix)).forEach(key => localStorage.removeItem(key))
+    }
     setAuthVerified(false)
     setUserEmail(''); setUserId(''); setTasks([]); setVisits([]); setVisitTopics([])
     setHistoryEvents([]); setSelectedVisitId(''); setPendingCount(0)
@@ -1399,11 +1425,13 @@ export default function App() {
   if (!sessionReady) return <div className="auth-screen"><div className="auth-card"><LoaderCircle className="spin"/><p>Conectando ao Watt-Wise...</p></div></div>
   if (!hasSupabaseConfig || !supabase) return <div className="auth-screen"><div className="auth-card"><div className="brand-mark auth-mark">W</div><h1>Watt-Wise</h1><p>Falta configurar a conexão com o Supabase para liberar o acesso.</p><div className="setup-note"><ShieldCheck size={18}/><span>O endereço do projeto e a chave pública precisam estar nas variáveis de ambiente da hospedagem.</span></div></div></div>
   if (!isOnline) return <div className="auth-screen"><div className="auth-card"><div className="brand-mark auth-mark">W</div><h1>Watt-Wise</h1><p>Por segurança, o acesso exige uma conexão ativa com a internet para validar sua sessão.</p><div className="setup-note"><ShieldCheck size={18}/><span>Conecte-se à internet e atualize a página para entrar. Seus dados não ficam disponíveis off-line.</span></div></div></div>
-  if (!authVerified || !userEmail) return <div className="auth-screen"><form className="auth-card" onSubmit={handleAuth}><div className="brand-mark auth-mark">W</div><div className="eyebrow">ORGANIZAÇÃO & ACOMPANHAMENTO</div><h1>Watt-Wise</h1><p>Entre para acessar sua agenda.</p>{!isOnline && <div className="notice">Você está sem internet. Para entrar off-line, é necessário já ter acessado esta conta neste dispositivo.</div>}
+  if (!authVerified || !userEmail) return <div className="auth-screen"><form className="auth-card" onSubmit={handleAuth}><div className="brand-mark auth-mark">W</div><div className="eyebrow">ORGANIZAÇÃO & ACOMPANHAMENTO</div><h1>Watt-Wise</h1><p>{authMode === 'login' ? 'Entre para acessar sua agenda.' : 'Crie seu acesso para utilizar a plataforma.'}</p>{!isOnline && <div className="notice">Você está sem internet. Para entrar off-line, é necessário já ter acessado esta conta neste dispositivo.</div>}
     {error && <div className="error-message">{error}</div>}{notice && <div className="notice">{notice}</div>}
     <label>E-mail<input type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com"/></label>
-    <label>Senha<input type="password" autoComplete="current-password" minLength={6} required value={password} onChange={e => setPassword(e.target.value)} placeholder="Mínimo de 6 caracteres"/></label>
-    <button className="primary-button auth-submit" disabled={authBusy}>{authBusy ? 'Aguarde...' : 'Entrar'}</button>
+    <label>Senha<input type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} minLength={authMode === 'signup' ? 12 : 6} required value={password} onChange={e => setPassword(e.target.value)} placeholder="Mínimo de 6 caracteres"/></label>
+    <button className="primary-button auth-submit" disabled={authBusy}>{authBusy ? 'Aguarde...' : authMode === 'login' ? 'Entrar' : 'Criar conta'}</button>
+    <button type="button" className="text-button" onClick={() => {setAuthMode(authMode === 'login' ? 'signup' : 'login');setPassword('');setError('');setNotice('')}}>{authMode === 'login' ? 'Precisa de um acesso? Criar conta' : 'Já possui acesso? Voltar ao login'}</button>
+    {authMode === 'signup' && <small className="auth-foot">A senha deve ter pelo menos 12 caracteres. Confirme o cadastro pelo e-mail, se solicitado.</small>}
     <small className="auth-foot"><ShieldCheck size={14}/> Seus registros são separados por conta.</small>
   </form></div>
 
