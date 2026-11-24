@@ -1294,8 +1294,40 @@ export default function App() {
     const rows = visitTopics.filter(topic => topic.visit_id === selectedVisitId)
     const popup = window.open('', '_blank')
     if (!popup) { setError('O navegador bloqueou a janela de impressão. Permita pop-ups para gerar o PDF.'); return }
-    const escapeHtml = (value: unknown) => String(value ?? '—').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/\\n/g, '<br>').replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')
-    popup.document.write('<!doctype html><html><head><meta charset="UTF-8"><title>' + escapeHtml(visit.title) + '</title><style>@page{size:A4;margin:0}html,body{margin:0;min-height:297mm}body{font:12px Arial,sans-serif;color:#222;box-sizing:border-box;padding:27mm 18mm 28mm;background-image:url("/agenda/timbrado-wattwise.svg");background-repeat:repeat-y;background-size:210mm 297mm;background-position:top left}h1{font-size:20px}h2{font-size:14px;margin-top:22px}p{white-space:pre-wrap;line-height:1.5}.meta{color:#555}table{width:100%;border-collapse:collapse;margin-top:12px}th,td{border:1px solid #bbb;padding:7px;text-align:left;vertical-align:top}th{background:#eee}tr{break-inside:avoid}@media print{html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{padding:27mm 18mm 28mm}}</style></head><body><h1>' + escapeHtml(visit.title) + '</h1><p class="meta">Data: ' + escapeHtml(new Date(visit.visit_date + 'T12:00:00').toLocaleDateString('pt-BR')) + '<br>Participantes: ' + escapeHtml(visit.participants) + '</p><h2>Observações gerais</h2><p>' + escapeHtml(visit.notes) + '</p><h2>Assuntos registrados</h2><table><thead><tr><th>Categoria</th><th>Assunto / descrição</th><th>Responsável</th><th>Protocolo</th><th>Prazo</th><th>Status</th><th>Observações</th></tr></thead><tbody>' + rows.map(topic => '<tr><td>' + escapeHtml(topic.category ?? 'Não categorizado') + '</td><td><strong>' + escapeHtml(topic.title) + '</strong><br>' + escapeHtml(topic.description) + '</td><td>' + escapeHtml(topic.responsible) + '</td><td>' + escapeHtml(topic.protocol) + '</td><td>' + escapeHtml(topic.due_date) + '</td><td>' + escapeHtml(topic.status) + '</td><td>' + escapeHtml(topic.observations) + '</td></tr>').join('') + '</tbody></table><script>window.onload=()=>window.print()</script></body></html>')
+    const escapeHtml = (value: unknown) => String(value ?? '—')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/\r?\n/g, '<br>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    // Observações podem conter HTML colado ou entidades HTML codificadas.
+    // safeRichHtml normaliza e permite somente as tags de formatação já suportadas pelo editor.
+    const richContent = (value: string | null | undefined) => value ? safeRichHtml(value) : '—'
+    popup.document.write('<!doctype html><html><head><meta charset="UTF-8"><title>' + escapeHtml(visit.title) + '</title><style>' +
+      '@page{size:A4;margin:30mm 18mm 32mm}' +
+      'html,body{margin:0;padding:0;min-height:100%;}' +
+      'body{position:relative;font:11px Arial,sans-serif;line-height:1.4;color:#222;background:transparent;overflow-wrap:anywhere;}' +
+      'body:before{content:"";position:fixed;inset:0;width:210mm;height:297mm;background:#fff url("/agenda/timbrado-wattwise.svg") no-repeat top left;background-size:210mm 297mm;z-index:-1;pointer-events:none;}' +
+      'h1{font-size:18px;line-height:1.2;margin:0 0 10px;overflow-wrap:anywhere;}' +
+      'h2{font-size:13px;margin:16px 0 7px;break-after:avoid;}' +
+      'p{margin:4px 0 8px;white-space:normal;line-height:1.45;}' +
+      '.meta{color:#555;margin-bottom:12px;}' +
+      'table{width:100%;table-layout:fixed;border-collapse:collapse;margin-top:8px;font-size:9px;}' +
+      'th,td{border:1px solid #bbb;padding:5px;text-align:left;vertical-align:top;overflow-wrap:anywhere;word-break:normal;}' +
+      'th{background:#eee;}' +
+      'tr{break-inside:avoid;page-break-inside:avoid;}' +
+      'td p{margin:0 0 4px;}td ul,td ol{margin:3px 0;padding-left:15px;}td li{margin:1px 0;}' +
+      '.observations{white-space:normal;}' +
+      '@media print{html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}body:before{position:fixed;}}' +
+      '</style></head><body><h1>' + escapeHtml(visit.title) +
+      '</h1><p class="meta">Data: ' + escapeHtml(new Date(visit.visit_date + 'T12:00:00').toLocaleDateString('pt-BR')) +
+      '<br>Participantes: ' + escapeHtml(visit.participants) +
+      '</p><h2>Observações gerais</h2><div class="observations">' + richContent(visit.notes) +
+      '</div><h2>Assuntos registrados</h2><table><thead><tr><th style="width:11%">Categoria</th><th style="width:22%">Assunto / descrição</th><th style="width:12%">Responsável</th><th style="width:12%">Protocolo</th><th style="width:9%">Prazo</th><th style="width:12%">Status</th><th style="width:22%">Observações</th></tr></thead><tbody>' +
+      rows.map(topic => '<tr><td>' + escapeHtml(topic.category ?? 'Não categorizado') +
+        '</td><td><strong>' + escapeHtml(topic.title) + '</strong><br>' + escapeHtml(topic.description) +
+        '</td><td>' + escapeHtml(topic.responsible) + '</td><td>' + escapeHtml(topic.protocol) +
+        '</td><td>' + escapeHtml(topic.due_date) + '</td><td>' + escapeHtml(topic.status) +
+        '</td><td class="observations">' + richContent(topic.observations) + '</td></tr>').join('') +
+      '</tbody></table><script>window.onload=()=>window.print()</script></body></html>')
     popup.document.close()
   }
   function carryTopicForward(topic: VisitTopic) {
