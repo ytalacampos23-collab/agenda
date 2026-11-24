@@ -331,6 +331,7 @@ export default function App() {
     const { data: listener } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT') {
         setAuthVerified(false); setUserEmail(''); setUserId('')
+        setTasks([]); setVisits([]); setVisitTopics([]); setLibraryItems([]); setGeneralLibraryItems([]); setAgendaNotes([]); setHistoryEvents([]); setPendingCount(0); setSelectedVisitId('')
       }
     })
     return () => { active = false; listener.subscription.unsubscribe() }
@@ -627,6 +628,8 @@ export default function App() {
       }
       const { data: verified, error: verifyError } = await supabase.auth.getUser()
       if (verifyError || !verified.user) throw verifyError ?? new Error('Não foi possível validar sua conta.')
+      // Nunca mantém dados da conta anterior visíveis durante a troca de usuário.
+      setTasks([]); setVisits([]); setVisitTopics([]); setLibraryItems([]); setGeneralLibraryItems([]); setAgendaNotes([]); setHistoryEvents([]); setPendingCount(0); setSelectedVisitId('')
       migrateUserCacheToSession(verified.user.id)
       setUserEmail(verified.user.email ?? '')
       setUserId(verified.user.id)
