@@ -1314,10 +1314,10 @@ export default function App() {
     popup.document.write('<!doctype html><html><head><meta charset="UTF-8"><title>' + escapeHtml(visit.title) + '</title><style>' +
       '@page{size:A4;margin:29mm 17mm 43mm 17mm;}' +
       'html,body{margin:0;padding:0;min-height:100%;}' +
-      'body{box-sizing:border-box;font:10px Arial,sans-serif;line-height:1.35;color:#222;overflow-wrap:anywhere;' +
-      'background:transparent;' +
-      '-webkit-print-color-adjust:exact;print-color-adjust:exact;}' +
-      'body:before{content:"";position:fixed;top:-29mm;left:-17mm;width:210mm;height:297mm;background:#fff url("/agenda/timbrado-wattwise.svg") no-repeat top left;background-size:210mm 297mm;z-index:-1;pointer-events:none;}' +
+      'body{position:relative;box-sizing:border-box;font:10px Arial,sans-serif;line-height:1.35;color:#222;overflow-wrap:anywhere;' +
+      'background:transparent;-webkit-print-color-adjust:exact;print-color-adjust:exact;}' +
+      'body:before{content:"";position:fixed;top:-29mm;left:-17mm;width:210mm;height:297mm;background:#fff url("/agenda/timbrado-wattwise.svg") no-repeat top left;background-size:210mm 297mm;z-index:0;pointer-events:none;}' +
+      'body>*{position:relative;z-index:1;}' +
       'h1{font-size:17px;line-height:1.2;margin:0 0 8px;overflow-wrap:anywhere;}' +
       'h2{font-size:12px;margin:13px 0 6px;break-after:avoid;page-break-after:avoid;}' +
       'p{margin:3px 0 6px;white-space:normal;line-height:1.35;}' +
