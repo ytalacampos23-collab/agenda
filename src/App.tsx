@@ -1297,26 +1297,38 @@ export default function App() {
     const escapeHtml = (value: unknown) => String(value ?? '—')
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/\r?\n/g, '<br>')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    // Observações podem conter HTML colado ou entidades HTML codificadas.
-    // safeRichHtml normaliza e permite somente as tags de formatação já suportadas pelo editor.
-    const richContent = (value: string | null | undefined) => value ? safeRichHtml(value) : '—'
+    // Desfaz entidades HTML repetidamente (alguns textos chegam codificados mais de uma vez)
+    // e só então aplica a sanitização/formatacão suportada pelo editor.
+    const richContent = (value: string | null | undefined) => {
+      if (!value) return '—'
+      let decoded = String(value)
+      for (let i = 0; i < 3; i++) {
+        const next = decoded
+          .replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+          .replace(/&quot;/gi, '"').replace(/&#39;|&#x27;/gi, "'").replace(/&nbsp;/gi, ' ')
+        if (next === decoded) break
+        decoded = next
+      }
+      return safeRichHtml(decoded)
+    }
     popup.document.write('<!doctype html><html><head><meta charset="UTF-8"><title>' + escapeHtml(visit.title) + '</title><style>' +
-      '@page{size:A4;margin:30mm 18mm 32mm}' +
+      '@page{size:A4;margin:30mm 17mm 52mm 17mm;}' +
       'html,body{margin:0;padding:0;min-height:100%;}' +
-      'body{position:relative;font:11px Arial,sans-serif;line-height:1.4;color:#222;background:transparent;overflow-wrap:anywhere;}' +
-      'body:before{content:"";position:fixed;inset:0;width:210mm;height:297mm;background:#fff url("/agenda/timbrado-wattwise.svg") no-repeat top left;background-size:210mm 297mm;z-index:-1;pointer-events:none;}' +
-      'h1{font-size:18px;line-height:1.2;margin:0 0 10px;overflow-wrap:anywhere;}' +
-      'h2{font-size:13px;margin:16px 0 7px;break-after:avoid;}' +
-      'p{margin:4px 0 8px;white-space:normal;line-height:1.45;}' +
-      '.meta{color:#555;margin-bottom:12px;}' +
-      'table{width:100%;table-layout:fixed;border-collapse:collapse;margin-top:8px;font-size:9px;}' +
-      'th,td{border:1px solid #bbb;padding:5px;text-align:left;vertical-align:top;overflow-wrap:anywhere;word-break:normal;}' +
+      'body{box-sizing:border-box;font:10px Arial,sans-serif;line-height:1.35;color:#222;overflow-wrap:anywhere;' +
+      'background:#fff url("/agenda/timbrado-wattwise.svg") repeat-y top left;background-size:210mm 297mm;' +
+      '-webkit-print-color-adjust:exact;print-color-adjust:exact;}' +
+      'h1{font-size:17px;line-height:1.2;margin:0 0 8px;overflow-wrap:anywhere;}' +
+      'h2{font-size:12px;margin:13px 0 6px;break-after:avoid;page-break-after:avoid;}' +
+      'p{margin:3px 0 6px;white-space:normal;line-height:1.35;}' +
+      '.meta{color:#555;margin-bottom:9px;}' +
+      'table{width:100%;table-layout:fixed;border-collapse:collapse;margin-top:6px;font-size:8px;}' +
+      'thead{display:table-header-group;}' +
+      'th,td{border:1px solid #aaa;padding:4px;text-align:left;vertical-align:top;overflow-wrap:anywhere;word-wrap:break-word;}' +
       'th{background:#eee;}' +
       'tr{break-inside:avoid;page-break-inside:avoid;}' +
-      'td p{margin:0 0 4px;}td ul,td ol{margin:3px 0;padding-left:15px;}td li{margin:1px 0;}' +
+      'td p{margin:0 0 3px;}td ul,td ol{margin:2px 0;padding-left:13px;}td li{margin:1px 0;}' +
       '.observations{white-space:normal;}' +
-      '@media print{html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}body:before{position:fixed;}}' +
+      '@media print{html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}' +
       '</style></head><body><h1>' + escapeHtml(visit.title) +
       '</h1><p class="meta">Data: ' + escapeHtml(new Date(visit.visit_date + 'T12:00:00').toLocaleDateString('pt-BR')) +
       '<br>Participantes: ' + escapeHtml(visit.participants) +
