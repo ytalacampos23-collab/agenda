@@ -1280,13 +1280,18 @@ export default function App() {
     const visit = visits.find(item => item.id === selectedVisitId)
     if (!visit) return
     const rows = visitTopics.filter(topic => topic.visit_id === selectedVisitId)
-    const escapeCell = (value: unknown) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-    const table = [['Ata','Data da visita','Observações gerais','Categoria','Assunto','Descrição','Responsável','Protocolo','Prazo','Status','Observações'], ...rows.map(topic => [visit.title, visit.visit_date, visit.notes, topic.category ?? 'Não categorizado', topic.title, topic.description, topic.responsible, topic.protocol, topic.due_date, topic.status, topic.observations])]
-    const html = '<html><head><meta charset="UTF-8"></head><body><table border="1">' + table.map(row => '<tr>' + row.map(cell => '<td>' + escapeCell(cell) + '</td>').join('') + '</tr>').join('') + '</table></body></html>'
+    const escapeCell = (value: unknown) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/\\r?\\n/g, '<br>')
+    const richCell = (value: unknown) => safeRichHtml(String(value ?? ''))
+    const headers = ['Ata','Data da visita','Observações gerais','Categoria','Assunto','Descrição','Responsável','Protocolo','Prazo','Status','Observações']
+    const table = [headers, ...rows.map(topic => [visit.title, visit.visit_date, visit.notes, topic.category ?? 'Não categorizado', topic.title, topic.description, topic.responsible, topic.protocol, topic.due_date, topic.status, topic.observations])]
+    const html = '<html><head><meta charset="UTF-8"><style>table{border-collapse:collapse}td,th{border:1px solid #999;padding:6px;vertical-align:top;white-space:normal}th{font-weight:bold;background:#eee}p{margin:0 0 5px}mark{background:#fff176}strong{font-weight:bold}</style></head><body><table><thead><tr>' + headers.map(cell => '<th>' + escapeCell(cell) + '</th>').join('') + '</tr></thead><tbody>' + rows.map(topic => {
+      const values = [visit.title, visit.visit_date, visit.notes, topic.category ?? 'Não categorizado', topic.title, topic.description, topic.responsible, topic.protocol, topic.due_date, topic.status, topic.observations]
+      return '<tr>' + values.map((cell, index) => '<td>' + (index === 2 || index === 10 ? richCell(cell) : escapeCell(cell)) + '</td>').join('') + '</tr>'
+    }).join('') + '</tbody></table></body></html>'
     const blob = new Blob(['\\uFEFF', html], { type: 'application/vnd.ms-excel;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a'); link.href = url; link.download = 'ata-cemig-' + visit.visit_date + '.xls'; link.click(); URL.revokeObjectURL(url)
-    setNotice('Planilha Excel da ata preparada para exportação.')
+    setNotice('Planilha Excel exportada com as anotações formatadas como texto, sem exibir códigos HTML.')
   }
   function exportVisitPdf() {
     const visit = visits.find(item => item.id === selectedVisitId)
