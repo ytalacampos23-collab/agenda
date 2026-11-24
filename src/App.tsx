@@ -151,7 +151,6 @@ export default function App() {
   const [syncFailed, setSyncFailed] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
   const [syncVersion, setSyncVersion] = useState(0)
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [authBusy, setAuthBusy] = useState(false)
@@ -603,15 +602,8 @@ export default function App() {
     setAuthBusy(true); setError(''); setNotice('')
     try {
       if (!navigator.onLine) throw new Error('É necessário estar conectado à internet para entrar no Watt-Wise.')
-      if (authMode === 'signup') {
-        const { data, error } = await supabase.auth.signUp({ email: email.trim(), password })
-        if (error) throw error
-        if (data.session) setNotice('Conta criada! Você já está conectado.')
-        else { setNotice('Cadastro iniciado. Confira seu e-mail para confirmar a conta e depois entre.'); return }
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
-        if (error) throw error
-      }
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+      if (error) throw error
       const { data: verified, error: verifyError } = await supabase.auth.getUser()
       if (verifyError || !verified.user) throw verifyError ?? new Error('Não foi possível validar sua conta.')
       setUserEmail(verified.user.email ?? '')
@@ -1407,12 +1399,11 @@ export default function App() {
   if (!sessionReady) return <div className="auth-screen"><div className="auth-card"><LoaderCircle className="spin"/><p>Conectando ao Watt-Wise...</p></div></div>
   if (!hasSupabaseConfig || !supabase) return <div className="auth-screen"><div className="auth-card"><div className="brand-mark auth-mark">W</div><h1>Watt-Wise</h1><p>Falta configurar a conexão com o Supabase para liberar o acesso.</p><div className="setup-note"><ShieldCheck size={18}/><span>O endereço do projeto e a chave pública precisam estar nas variáveis de ambiente da hospedagem.</span></div></div></div>
   if (!isOnline) return <div className="auth-screen"><div className="auth-card"><div className="brand-mark auth-mark">W</div><h1>Watt-Wise</h1><p>Por segurança, o acesso exige uma conexão ativa com a internet para validar sua sessão.</p><div className="setup-note"><ShieldCheck size={18}/><span>Conecte-se à internet e atualize a página para entrar. Seus dados não ficam disponíveis off-line.</span></div></div></div>
-  if (!authVerified || !userEmail) return <div className="auth-screen"><form className="auth-card" onSubmit={handleAuth}><div className="brand-mark auth-mark">W</div><div className="eyebrow">ORGANIZAÇÃO & ACOMPANHAMENTO</div><h1>Watt-Wise</h1><p>{authMode === 'login' ? 'Entre para acessar sua agenda.' : 'Crie sua conta para começar a usar sua agenda.'}</p>{!isOnline && <div className="notice">Você está sem internet. Para entrar off-line, é necessário já ter acessado esta conta neste dispositivo.</div>}
+  if (!authVerified || !userEmail) return <div className="auth-screen"><form className="auth-card" onSubmit={handleAuth}><div className="brand-mark auth-mark">W</div><div className="eyebrow">ORGANIZAÇÃO & ACOMPANHAMENTO</div><h1>Watt-Wise</h1><p>Entre para acessar sua agenda.</p>{!isOnline && <div className="notice">Você está sem internet. Para entrar off-line, é necessário já ter acessado esta conta neste dispositivo.</div>}
     {error && <div className="error-message">{error}</div>}{notice && <div className="notice">{notice}</div>}
     <label>E-mail<input type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com"/></label>
-    <label>Senha<input type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} minLength={6} required value={password} onChange={e => setPassword(e.target.value)} placeholder="Mínimo de 6 caracteres"/></label>
-    <button className="primary-button auth-submit" disabled={authBusy}>{authBusy ? 'Aguarde...' : authMode === 'login' ? 'Entrar' : 'Criar minha conta'}</button>
-    <button type="button" className="text-button" onClick={() => {setAuthMode(authMode === 'login' ? 'signup' : 'login');setError('');setNotice('')}}>{authMode === 'login' ? 'Ainda não tem conta? Criar acesso' : 'Já tem uma conta? Voltar ao login'}</button>
+    <label>Senha<input type="password" autoComplete="current-password" minLength={6} required value={password} onChange={e => setPassword(e.target.value)} placeholder="Mínimo de 6 caracteres"/></label>
+    <button className="primary-button auth-submit" disabled={authBusy}>{authBusy ? 'Aguarde...' : 'Entrar'}</button>
     <small className="auth-foot"><ShieldCheck size={14}/> Seus registros são separados por conta.</small>
   </form></div>
 
