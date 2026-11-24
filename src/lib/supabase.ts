@@ -8,8 +8,12 @@ const publishableKey = (
 ) as string | undefined
 
 export const hasSupabaseConfig = Boolean(url && publishableKey)
+
+// Remove a sessão antiga, que era armazenada de forma persistente no navegador.
+try { window.localStorage.removeItem('sb-ricjeqgfzsthsutdeyah-auth-token') } catch { /* Storage indisponível. */ }
 export const supabase = hasSupabaseConfig ? createClient(url!, publishableKey!, {
   auth: {
+    storageKey: 'wattwise-auth-session',
     // Mantém a sessão apenas nesta aba; ao fechar a aba, o usuário precisará entrar novamente.
     storage: window.sessionStorage,
     persistSession: true,
