@@ -104,6 +104,14 @@
 .topic-filters label{display:flex;flex-direction:column;gap:5px;color:#71847d;font-size:10px;font-weight:600;min-width:160px}
 .topic-filters select{border:1px solid #e1e9e5;border-radius:7px;padding:8px 10px;background:#fff;color:#405a56;font-size:11px}
 .topic-status-select{font-weight:700!important;border-width:1px!important;border-radius:8px!important}
+.topic-status-select{padding:7px 10px!important;transition:background-color .15s,border-color .15s,color .15s}
+.topic-status-pendente{background:#fde8e7!important;border-color:#efb5b1!important;color:#a93632!important}
+.topic-status-resolvido{background:#e5f3e8!important;border-color:#b8d9bf!important;color:#287343!important}
+.topic-status-próxima-semana{background:#fff4cc!important;border-color:#f0d36f!important;color:#8a6500!important}
+.topic-status-em-andamento{background:#e6f0fb!important;border-color:#b6d0ef!important;color:#285d9b!important}
+.topic-status-em-análise{background:#f0eafa!important;border-color:#d3c1ed!important;color:#68469a!important}
+.topic-status-acompanhar-chamado{background:#e3f5f2!important;border-color:#acdcd3!important;color:#24776b!important}
+.topic-status-não-se-aplica{background:#fcecf4!important;border-color:#ecc4d8!important;color:#984b70!important}
 .topic-status-pendente{background:#fde8e7!important;border-color:#efb5b1!important;color:#a93632!important}
 .topic-status-em-análise{background:#e6f0fb!important;border-color:#b6d0ef!important;color:#285d9b!important}
 .topic-status-resolvido{background:#e5f3e8!important;border-color:#b8d9bf!important;color:#287343!important}
