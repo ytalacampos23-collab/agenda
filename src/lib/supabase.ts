@@ -8,4 +8,12 @@ const publishableKey = (
 ) as string | undefined
 
 export const hasSupabaseConfig = Boolean(url && publishableKey)
-export const supabase = hasSupabaseConfig ? createClient(url!, publishableKey!) : null
+export const supabase = hasSupabaseConfig ? createClient(url!, publishableKey!, {
+  auth: {
+    // Mantém a sessão apenas nesta aba; ao fechar a aba, o usuário precisará entrar novamente.
+    storage: window.sessionStorage,
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+}) : null
