@@ -53,7 +53,7 @@ create table if not exists public.visit_topics (
   responsible text,
   protocol text,
   due_date date,
-  status text not null default 'Pendente' check (status in ('Pendente','Em análise','Resolvido','Não se aplica')),
+  status text not null default 'Pendente' check (status in ('Pendente','Em análise','Em andamento','Acompanhar Chamado','Resolvido','Não se aplica')),
   observations text,
   origin_topic_id uuid,
   created_at timestamptz not null default now(),
