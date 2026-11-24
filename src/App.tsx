@@ -1423,7 +1423,7 @@ export default function App() {
   if (!authVerified || !userEmail) return <div className="auth-screen"><form className="auth-card" onSubmit={handleAuth}><div className="brand-mark auth-mark">W</div><div className="eyebrow">ORGANIZAÇÃO & ACOMPANHAMENTO</div><h1>Watt-Wise</h1><p>Entre com seu e-mail e senha para acessar sua agenda. Novos acessos são liberados somente pela administração.</p>{!isOnline && <div className="notice">Você está sem internet. Para entrar off-line, é necessário já ter acessado esta conta neste dispositivo.</div>}
     {error && <div className="error-message">{error}</div>}{notice && <div className="notice">{notice}</div>}
     <label>E-mail<input type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com"/></label>
-    <label>Senha<input type="password" autoComplete="current-password" minLength={12} required value={password} onChange={e => setPassword(e.target.value)} placeholder="Sua senha (mínimo de 12 caracteres)"/></label>
+    <label>Senha<input type="password" autoComplete="current-password" minLength={8} required value={password} onChange={e => setPassword(e.target.value)} placeholder="Sua senha (mínimo de 8 caracteres)"/></label>
     <button className="primary-button auth-submit" disabled={authBusy}>{authBusy ? 'Validando acesso...' : 'Entrar'}</button>
     
     
