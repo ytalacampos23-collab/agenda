@@ -1335,6 +1335,7 @@ export default function App() {
       '</style></head><body><h1>' + escapeHtml(visit.title) +
       '</h1><p class="meta">Data: ' + escapeHtml(new Date(visit.visit_date + 'T12:00:00').toLocaleDateString('pt-BR')) +
       '<br>Participantes: ' + escapeHtml(visit.participants) +
+      '<br>CNPJ Wisecoop: ' +
       '</p><h2>Observações gerais</h2><div class="observations">' + richContent(visit.notes) +
       '</div><h2>Assuntos registrados</h2><table><thead><tr><th style="width:11%">Categoria</th><th style="width:22%">Assunto / descrição</th><th style="width:12%">Responsável</th><th style="width:12%">Protocolo</th><th style="width:9%">Prazo</th><th style="width:12%">Status</th><th style="width:22%">Observações</th></tr></thead><tbody>' +
       rows.map(topic => '<tr><td>' + escapeHtml(topic.category ?? 'Não categorizado') +
