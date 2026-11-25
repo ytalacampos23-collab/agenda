@@ -192,7 +192,7 @@ export default function App() {
   const [expandedLibraryMessageId, setExpandedLibraryMessageId] = useState<string | null>(null)
   const [expandedLibraryDocumentId, setExpandedLibraryDocumentId] = useState<string | null>(null)
   const [generalLibraryItems, setGeneralLibraryItems] = useState<LibraryItem[]>([])
-  const [generalLibraryKind, setGeneralLibraryKind] = useState<'message' | 'documents'>('message')
+  const [generalLibraryKind, setGeneralLibraryKind] = useState<'message' | 'documents' | 'ombudsman'>('message')
   const [generalLibraryTitle, setGeneralLibraryTitle] = useState('')
   const [generalLibraryContent, setGeneralLibraryContent] = useState('')
   const [editingGeneralLibraryItem, setEditingGeneralLibraryItem] = useState<string | null>(null)
