@@ -1332,13 +1332,13 @@ export default function App() {
       }
       return safeRichHtml(decoded)
     }
-    const letterheadUrl = new URL('watt-wise-timbrado.svg', window.location.href).href
+    const letterheadUrl = new URL(import.meta.env.BASE_URL + 'watt-wise-timbrado.svg', window.location.origin).href
     const generatedAt = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
     popup.document.write('<!doctype html><html><head><meta charset="UTF-8"><title>' + escapeHtml(visit.title) + '</title><style>' +
       '@page{size:A4;margin:29mm 21mm 32mm 21mm;}' +
       'html,body{margin:0;padding:0;background:transparent;}' +
       'body{position:relative;font:11px Arial,sans-serif;line-height:1.35;color:#222;overflow-wrap:anywhere;-webkit-print-color-adjust:exact;print-color-adjust:exact;}' +
-      '.letterhead{position:fixed;z-index:-1;top:-29mm;left:-21mm;width:210mm;height:297mm;object-fit:fill;pointer-events:none;}' +
+      '.letterhead{position:fixed;z-index:0;top:-29mm;left:-21mm;width:210mm;height:297mm;object-fit:fill;pointer-events:none;}' +'.print-content{position:relative;z-index:1;}' +
       '.document-meta{display:flex;justify-content:space-between;gap:12px;align-items:center;font-size:9px;color:#555;margin:0 0 5mm;}' +
       'h1{font-size:17px;line-height:1.2;margin:0 0 3mm;overflow-wrap:anywhere;color:#222;}' +
       'h2{font-size:14px;margin:4mm 0 2mm;break-after:avoid;page-break-after:avoid;}' +
@@ -1354,7 +1354,7 @@ export default function App() {
       'strong,b{font-weight:700;}mark{background:#fff176;color:#222;}' +
       'h3,h4{margin:1mm 0;font-size:10px;}' +
       '@media print{html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}.letterhead{display:block;}}' +
-      '</style></head><body><img class="letterhead" src="' + letterheadUrl + '" alt="Papel timbrado Watt Wise">' +
+      '</style></head><body><img class="letterhead" src="' + letterheadUrl + '" alt="Papel timbrado Watt Wise"><main class="print-content">' +
       '<div class="document-meta"><span>' + escapeHtml(generatedAt) + '</span><span>' + escapeHtml(visit.title) + ' - ' + escapeHtml(new Date(visit.visit_date + 'T12:00:00').toLocaleDateString('pt-BR')) + '</span></div>' +
       '<h1>' + escapeHtml(visit.title) + '</h1><div class="visit-details">' +
       '<p>Data: ' + escapeHtml(new Date(visit.visit_date + 'T12:00:00').toLocaleDateString('pt-BR')) + '</p>' +
@@ -1367,7 +1367,7 @@ export default function App() {
         '</td><td>' + escapeHtml(topic.responsible) + '</td><td>' + escapeHtml(topic.protocol) +
         '</td><td>' + escapeHtml(topic.due_date) + '</td><td>' + escapeHtml(topic.status) +
         '</td><td class="observations">' + richContent(topic.observations) + '</td></tr>').join('') +
-      '</tbody></table><script>window.onload=()=>{const img=document.querySelector(".letterhead");const printNow=()=>setTimeout(()=>window.print(),250);if(img.complete)printNow();else img.onload=printNow;}</script></body></html>')
+      '</tbody></table></main><script>window.onload=()=>{const img=document.querySelector(".letterhead");const printNow=()=>setTimeout(()=>window.print(),250);if(img.complete)printNow();else img.onload=printNow;}</script></body></html>')
     popup.document.close()
   }
   function carryTopicForward(topic: VisitTopic) {
