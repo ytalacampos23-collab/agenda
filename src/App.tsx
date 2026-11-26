@@ -1332,42 +1332,54 @@ export default function App() {
       }
       return safeRichHtml(decoded)
     }
-    const letterheadUrl = new URL(import.meta.env.BASE_URL + 'watt-wise-timbrado.svg', window.location.origin).href
+    const letterheadUrl = new URL(import.meta.env.BASE_URL + 'timbrado-wattwise.svg', window.location.origin).href
     const generatedAt = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
-    popup.document.write('<!doctype html><html><head><meta charset="UTF-8"><title>' + escapeHtml(visit.title) + '</title><style>' +
-      '@page{size:A4;margin:29mm 21mm 32mm 21mm;}' +
-      'html,body{margin:0;padding:0;background:transparent;}' +
-      'body{position:relative;font:11px Arial,sans-serif;line-height:1.35;color:#222;overflow-wrap:anywhere;-webkit-print-color-adjust:exact;print-color-adjust:exact;}' +
-      'body::before{content:"";position:fixed;z-index:0;top:-29mm;left:-21mm;width:210mm;height:297mm;background-image:url("' + letterheadUrl + '");background-repeat:no-repeat;background-position:center;background-size:100% 100%;pointer-events:none;}' +'.print-content{position:relative;z-index:1;background:transparent;}' +
-      '.document-meta{display:flex;justify-content:space-between;gap:12px;align-items:center;font-size:9px;color:#555;margin:0 0 5mm;}' +
-      'h1{font-size:17px;line-height:1.2;margin:0 0 3mm;overflow-wrap:anywhere;color:#222;}' +
-      'h2{font-size:14px;margin:4mm 0 2mm;break-after:avoid;page-break-after:avoid;}' +
-      'p{margin:1mm 0 1.5mm;white-space:normal;line-height:1.3;}' +
-      '.visit-details{margin-bottom:3mm;}' +
-      'table{width:100%;table-layout:fixed;border-collapse:collapse;margin-top:2mm;font-size:9px;background:rgba(255,255,255,.94);}' +
-      'thead{display:table-header-group;}' +
-      'th,td{border:1px solid #aaa;padding:1.4mm 1.2mm;text-align:left;vertical-align:top;overflow-wrap:anywhere;word-wrap:break-word;}' +
-      'th{background:#e9e9e9;font-weight:bold;}' +
-      'tr{break-inside:avoid;page-break-inside:avoid;}' +
-      'td p{margin:0 0 1mm;}td ul,td ol{margin:1mm 0;padding-left:4mm;}td li{margin:.4mm 0;}' +
-      '.observations{white-space:normal;}' +
-      'strong,b{font-weight:700;}mark{background:#fff176;color:#222;}' +
-      'h3,h4{margin:1mm 0;font-size:10px;}' +
-      '@media print{html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}body::before{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}' +
-      '</style></head><body><main class="print-content">' +
-      '<div class="document-meta"><span>' + escapeHtml(generatedAt) + '</span><span>' + escapeHtml(visit.title) + ' - ' + escapeHtml(new Date(visit.visit_date + 'T12:00:00').toLocaleDateString('pt-BR')) + '</span></div>' +
+    const visitDate = new Date(visit.visit_date + 'T12:00:00').toLocaleDateString('pt-BR')
+    const tableHead = '<thead><tr><th style="width:11%">Categoria</th><th style="width:22%">Assunto / descrição</th><th style="width:12%">Responsável</th><th style="width:12%">Protocolo</th><th style="width:9%">Prazo</th><th style="width:12%">Status</th><th style="width:22%">Observações</th></tr></thead>'
+    const rowsHtml = rows.map(topic => '<tr><td>' + escapeHtml(topic.category ?? '') +
+      '</td><td><strong>' + escapeHtml(topic.title) + '</strong>' + (topic.description ? '<br>' + escapeHtml(topic.description) : '') +
+      '</td><td>' + escapeHtml(topic.responsible) + '</td><td>' + escapeHtml(topic.protocol) +
+      '</td><td>' + escapeHtml(topic.due_date) + '</td><td>' + escapeHtml(topic.status) +
+      '</td><td class="observations">' + richContent(topic.observations) + '</td></tr>').join('')
+    const firstPageIntro = '<div class="document-meta"><span>' + escapeHtml(generatedAt) + '</span><span>Visita à Cemig - ' + escapeHtml(visitDate) + '</span></div>' +
       '<h1>' + escapeHtml(visit.title) + '</h1><div class="visit-details">' +
-      '<p>Data: ' + escapeHtml(new Date(visit.visit_date + 'T12:00:00').toLocaleDateString('pt-BR')) + '</p>' +
+      '<p>Data: ' + escapeHtml(visitDate) + '</p>' +
       '<p>Participantes: ' + escapeHtml(visit.participants) + '</p>' +
       '<p>CNPJ Wisecoop: ' + escapeHtml(visit.cnpj_wisecoop) + '</p></div>' +
       '<h2>Observações gerais</h2><div class="observations">' + richContent(visit.notes) +
-      '</div><h2>Assuntos registrados</h2><table><thead><tr><th style="width:11%">Categoria</th><th style="width:22%">Assunto / descrição</th><th style="width:12%">Responsável</th><th style="width:12%">Protocolo</th><th style="width:9%">Prazo</th><th style="width:12%">Status</th><th style="width:22%">Observações</th></tr></thead><tbody>' +
-      rows.map(topic => '<tr><td>' + escapeHtml(topic.category ?? '') +
-        '</td><td><strong>' + escapeHtml(topic.title) + '</strong>' + (topic.description ? '<br>' + escapeHtml(topic.description) : '') +
-        '</td><td>' + escapeHtml(topic.responsible) + '</td><td>' + escapeHtml(topic.protocol) +
-        '</td><td>' + escapeHtml(topic.due_date) + '</td><td>' + escapeHtml(topic.status) +
-        '</td><td class="observations">' + richContent(topic.observations) + '</td></tr>').join('') +
-      '</tbody></table></main><script>window.onload=()=>setTimeout(()=>window.print(),400);</script></body></html>')
+      '</div><h2>Assuntos registrados</h2>'
+    popup.document.write('<!doctype html><html><head><meta charset="UTF-8"><title>' + escapeHtml(visit.title) + '</title><style>' +
+      '@page{size:A4;margin:0;}' +
+      '*{box-sizing:border-box;}html,body{margin:0;padding:0;width:210mm;background:#fff;}' +
+      'body{font:11px Arial,sans-serif;line-height:1.3;color:#222;-webkit-print-color-adjust:exact;print-color-adjust:exact;}' +
+      '.page{position:relative;width:210mm;height:297mm;overflow:hidden;break-after:page;page-break-after:always;background:#fff;}' +
+      '.page:last-child{break-after:auto;page-break-after:auto;}' +
+      '.page-bg{position:absolute;inset:0;width:210mm;height:297mm;object-fit:fill;z-index:0;}' +
+      '.page-content{position:absolute;z-index:1;top:29mm;left:21mm;right:21mm;bottom:32mm;overflow:hidden;background:transparent;}' +
+      '.document-meta{display:flex;justify-content:space-between;gap:12px;align-items:center;font-size:9px;color:#555;margin:0 0 5mm;}' +
+      'h1{font-size:17px;line-height:1.2;margin:0 0 3mm;color:#222;}' +
+      'h2{font-size:14px;margin:4mm 0 2mm;break-after:avoid;page-break-after:avoid;}' +
+      'p{margin:1mm 0 1.5mm;line-height:1.3;}' +
+      '.visit-details{margin-bottom:3mm;}' +
+      'table{width:100%;table-layout:fixed;border-collapse:collapse;margin-top:2mm;font-size:9px;background:rgba(255,255,255,.94);}' +
+      'thead{display:table-header-group;}th,td{border:1px solid #aaa;padding:1.4mm 1.2mm;text-align:left;vertical-align:top;overflow-wrap:anywhere;word-wrap:break-word;}' +
+      'th{background:#e9e9e9;font-weight:bold;}tr{break-inside:avoid;page-break-inside:avoid;}' +
+      'td p{margin:0 0 1mm;}td ul,td ol{margin:1mm 0;padding-left:4mm;}td li{margin:.4mm 0;}' +
+      'strong,b{font-weight:700;}mark{background:#fff176;color:#222;}h3,h4{margin:1mm 0;font-size:10px;}' +
+      '@media print{html,body{width:210mm;} .page{margin:0;}}' +
+      '</style></head><body><div id="pages"></div><template id="row-template">' + rowsHtml + '</template>' +
+      '<script>(function(){' +
+      'const bg=' + JSON.stringify(letterheadUrl) + ';const intro=' + JSON.stringify(firstPageIntro) + ';const head=' + JSON.stringify(tableHead) + ';' +
+      'const source=[...document.querySelector("#row-template").content.querySelectorAll("tr")];const host=document.querySelector("#pages");' +
+      'function makePage(first){const page=document.createElement("section");page.className="page";' +
+      'const image=document.createElement("img");image.className="page-bg";image.src=bg;image.alt="";page.appendChild(image);' +
+      'const content=document.createElement("div");content.className="page-content";if(first)content.innerHTML=intro;' +
+      'const table=document.createElement("table");table.innerHTML=head+"<tbody></tbody>";content.appendChild(table);page.appendChild(content);host.appendChild(page);return {page,content,body:table.tBodies[0]};}' +
+      'let current=makePage(true);source.forEach(row=>{const copy=row.cloneNode(true);current.body.appendChild(copy);' +
+      'if(current.content.scrollHeight>current.content.clientHeight+1&&current.body.rows.length>1){current.body.removeChild(copy);current=makePage(false);current.body.appendChild(copy);}' +
+      '});' +
+      'const images=[...document.images];Promise.all(images.map(img=>img.complete?Promise.resolve():new Promise(resolve=>{img.onload=resolve;img.onerror=resolve;}))).then(()=>document.fonts.ready).then(()=>setTimeout(()=>window.print(),350));' +
+      '})();</script></body></html>')
     popup.document.close()
   }
   function carryTopicForward(topic: VisitTopic) {
