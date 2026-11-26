@@ -1361,7 +1361,7 @@ export default function App() {
       'h2{font-size:14px;margin:4mm 0 2mm;break-after:avoid;page-break-after:avoid;}' +
       'p{margin:1mm 0 1.5mm;line-height:1.3;}' +
       '.visit-details{margin-bottom:3mm;}' +
-      'table{width:100%;table-layout:fixed;border-collapse:collapse;margin-top:2mm;font-size:9px;background:rgba(255,255,255,.94);}' +
+      'table{width:100%;table-layout:fixed;border-collapse:collapse;margin-top:2mm;font-size:11px;background:rgba(255,255,255,.94);}' +
       'thead{display:table-header-group;}th,td{border:1px solid #aaa;padding:1.4mm 1.2mm;text-align:left;vertical-align:top;overflow-wrap:anywhere;word-wrap:break-word;}' +
       'th{background:#e9e9e9;font-weight:bold;}tr{break-inside:avoid;page-break-inside:avoid;}' +
       'td p{margin:0 0 1mm;}td ul,td ol{margin:1mm 0;padding-left:4mm;}td li{margin:.4mm 0;}' +
