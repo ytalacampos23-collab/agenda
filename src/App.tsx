@@ -1333,7 +1333,6 @@ export default function App() {
       return safeRichHtml(decoded)
     }
     const letterheadUrl = new URL(import.meta.env.BASE_URL + 'timbrado-wattwise.svg', window.location.origin).href
-    const generatedAt = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
     const visitDate = new Date(visit.visit_date + 'T12:00:00').toLocaleDateString('pt-BR')
     const tableHead = '<thead><tr><th style="width:11%">Categoria</th><th style="width:22%">Assunto / descrição</th><th style="width:12%">Responsável</th><th style="width:12%">Protocolo</th><th style="width:9%">Prazo</th><th style="width:12%">Status</th><th style="width:22%">Observações</th></tr></thead>'
     const rowsHtml = rows.map(topic => '<tr><td>' + escapeHtml(topic.category ?? '') +
@@ -1341,8 +1340,7 @@ export default function App() {
       '</td><td>' + escapeHtml(topic.responsible) + '</td><td>' + escapeHtml(topic.protocol) +
       '</td><td>' + escapeHtml(topic.due_date) + '</td><td>' + escapeHtml(topic.status) +
       '</td><td class="observations">' + richContent(topic.observations) + '</td></tr>').join('')
-    const firstPageIntro = '<div class="document-meta"><span>' + escapeHtml(generatedAt) + '</span><span>Visita à Cemig - ' + escapeHtml(visitDate) + '</span></div>' +
-      '<h1>' + escapeHtml(visit.title) + '</h1><div class="visit-details">' +
+    const firstPageIntro = '<h1>' + escapeHtml(visit.title) + '</h1><div class="visit-details">' +
       '<p>Data: ' + escapeHtml(visitDate) + '</p>' +
       '<p>Participantes: ' + escapeHtml(visit.participants) + '</p>' +
       '<p>CNPJ Wisecoop: ' + escapeHtml(visit.cnpj_wisecoop) + '</p></div>' +
@@ -1356,7 +1354,6 @@ export default function App() {
       '.page:last-child{break-after:auto;page-break-after:auto;}' +
       '.page-bg{position:absolute;inset:0;width:210mm;height:297mm;object-fit:fill;z-index:0;}' +
       '.page-content{position:absolute;z-index:1;top:29mm;left:21mm;right:21mm;bottom:32mm;overflow:hidden;background:transparent;}' +
-      '.document-meta{display:flex;justify-content:space-between;gap:12px;align-items:center;font-size:11px;font-family:Arial,sans-serif;color:#555;margin:0 0 5mm;}' +
       'h1{font-size:17px;line-height:1.2;margin:0 0 3mm;color:#222;}' +
       'h2{font-size:14px;margin:4mm 0 2mm;break-after:avoid;page-break-after:avoid;}' +
       'p{margin:1mm 0 1.5mm;line-height:1.3;}' +
