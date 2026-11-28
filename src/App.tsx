@@ -298,7 +298,11 @@ export default function App() {
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [auditBusy, setAuditBusy] = useState(false)
-  const [auditTab, setAuditTab] = useState<'invoices' | 'contracts'>('invoices')
+  const [auditTab, setAuditTab] = useState<'invoices' | 'contracts' | 'signed'>('invoices')
+  const [signedContracts,setSignedContracts]=useState<File|null>(null)
+  const [signedInvoices,setSignedInvoices]=useState<File|null>(null)
+  const [signedBusy,setSignedBusy]=useState(false)
+  const [signedResult,setSignedResult]=useState<{month:string;total:number;skipped:number;items:{row:number;client:string;installation:string;uc:string;days:number}[];blob:Blob}|null>(null)
   const [contractAuditBusy, setContractAuditBusy] = useState(false)
   const [contractListFile, setContractListFile] = useState<File|null>(null)
   const [invoiceListFile, setInvoiceListFile] = useState<File|null>(null)
@@ -1172,6 +1176,56 @@ export default function App() {
       setContractAuditBusy(false)
     }
   }
+  async function auditSignedContracts() {
+    if (!signedContracts || !signedInvoices) return
+    setSignedBusy(true); setSignedResult(null); setError('')
+    try {
+      for (const f of [signedContracts,signedInvoices]) if (!f.name.toLowerCase().endsWith('.xlsx') || !f.size || f.size>10*1024*1024) throw new Error('Envie arquivos .xlsx válidos de até 10 MB.')
+      const [contracts,invoices]=await Promise.all([readXlsxSheets(signedContracts),readXlsxSheets(signedInvoices)])
+      const locate=(sheets:ParsedXlsxSheet[], names:string[])=>{
+        for(const sheet of sheets) for(const row of sheet.rows.slice(0,30)){
+          const cols=names.map(n=>[...row.cells].find(([,v])=>normalizeAuditText(v)===normalizeAuditText(n))?.[0])
+          if(cols.every(c=>c!==undefined)) return {sheet,header:row.number,cols:cols as number[]}
+        }
+        throw new Error('Colunas não encontradas: '+names.join(', '))
+      }
+      const c=locate(contracts,['Número instalação','Nº unidade consumidora','Titular conta','Situação Contrato','Data de assinatura'])
+      const f=locate(invoices,['Instalação','Unid. Consumidora','Mês Referencia','Status da Fatura','Geração de Faturas','Status de Boleto Gerado'])
+      const now=new Date(), end=Date.UTC(now.getFullYear(),now.getMonth(),now.getDate()), ref=now.getFullYear()*12+now.getMonth()-1
+      const billed=new Set<string>(); let referenceRows=0
+      for(const row of f.sheet.rows){
+        if(row.number<=f.header) continue
+        const [a,b,m,status,generation,boleto]=f.cols.map(i=>row.cells.get(i)||'')
+        if(parseAuditMonth(m)!==ref) continue
+        const inst=normalizeContractAuditKey(a),uc=normalizeContractAuditKey(b)
+        if(!inst||!uc) continue
+        referenceRows++
+        if(normalizeAuditText(status).includes('cancelad')||(normalizeAuditText(generation)==='ativo'&&normalizeAuditText(boleto)==='sucesso')) billed.add(inst+'|'+uc)
+      }
+      if(!referenceRows) throw new Error('Nenhum registro válido na referência '+auditMonthLabel(ref)+'. Confira a planilha de faturas.')
+      const parseDate=(v:string)=>{
+        const br=v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s.*)?$/), iso=v.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})(?:[T\s].*)?$/)
+        if(!br&&!iso)return NaN
+        const [y,m,d]=br?[+br[3],+br[2],+br[1]]:[+iso![1],+iso![2],+iso![3]]
+        const t=Date.UTC(y,m-1,d), check=new Date(t)
+        return check.getUTCFullYear()===y&&check.getUTCMonth()===m-1&&check.getUTCDate()===d?t:NaN
+      }
+      const items:{row:number;client:string;installation:string;uc:string;days:number}[]=[];let total=0,skipped=0
+      for(const row of c.sheet.rows){
+        if(row.number<=c.header)continue
+        const [a,b,client,status,date]=c.cols.map(i=>row.cells.get(i)||'')
+        if(normalizeAuditText(status)!=='ativo')continue
+        const installation=normalizeContractAuditKey(a),uc=normalizeContractAuditKey(b),start=parseDate(date)
+        if(!installation||!uc||!Number.isFinite(start)||start>end||start<Date.UTC(1900,0,1)){skipped++;continue}
+        total++
+        let days=0
+        for(let t=start+86400000;t<=end;t+=86400000){const day=new Date(t).getUTCDay();if(day!==0&&day!==6)days++}
+        if(days>=60&&!billed.has(installation+'|'+uc))items.push({row:row.number,client,installation,uc,days})
+      }
+      const blob=await buildAuditedXlsx(signedContracts,c.sheet.name,new Map<number,'yellow'>(items.map(x=>[x.row,'yellow'])))
+      setSignedResult({month:auditMonthLabel(ref),total,skipped,items,blob})
+    }catch(e){setError(e instanceof Error?e.message:'Falha na auditoria de contratos assinados.')}finally{setSignedBusy(false)}
+  }
   async function exportContractAudit() {
     if (!contractAuditResult || !contractListFile) return
     try {
@@ -1719,7 +1773,9 @@ export default function App() {
             <div className="audit-tabs" role="tablist" aria-label="Funcionalidades de auditoria">
               <button type="button" role="tab" aria-selected={auditTab==='invoices'} className={auditTab==='invoices'?'audit-tab active':'audit-tab'} onClick={()=>setAuditTab('invoices')}><FileSpreadsheet size={16}/> Faturas não geradas</button>
               <button type="button" role="tab" aria-selected={auditTab==='contracts'} className={auditTab==='contracts'?'audit-tab active':'audit-tab'} onClick={()=>setAuditTab('contracts')}><FileSpreadsheet size={16}/> Contratos + Faturas não geradas</button>
+              <button type="button" role="tab" aria-selected={auditTab==='signed'} className={auditTab==='signed'?'audit-tab active':'audit-tab'} onClick={()=>setAuditTab('signed')}><FileSpreadsheet size={16}/> Contratos Assinados</button>
             </div>
+            {auditTab==='signed' && <section className="panel audit-panel"><div className="panel-heading"><div><h2>Contratos Assinados</h2><p>Contratos ativos com 60 dias úteis ou mais sem fatura na referência anterior.</p></div></div><div className="audit-security-note"><ShieldCheck size={18}/> Processamento local no navegador.</div><div className="contract-audit-upload-grid"><label className="audit-upload"><Upload size={22}/><strong>Planilha de contratos</strong><span>{signedContracts?.name||'.xlsx até 10 MB'}</span><input type="file" accept=".xlsx" disabled={signedBusy} onChange={e=>{setSignedContracts(e.target.files?.[0]??null);setSignedResult(null)}}/></label><label className="audit-upload"><Upload size={22}/><strong>Planilha de faturas</strong><span>{signedInvoices?.name||'.xlsx até 10 MB'}</span><input type="file" accept=".xlsx" disabled={signedBusy} onChange={e=>{setSignedInvoices(e.target.files?.[0]??null);setSignedResult(null)}}/></label></div><p className="audit-footnote">Dias úteis: segunda a sexta, sem desconto de feriados. Faturas canceladas contam como existentes.</p><button type="button" className="primary-button" disabled={signedBusy||!signedContracts||!signedInvoices} onClick={()=>void auditSignedContracts()}>{signedBusy?'Analisando...':'Realizar auditoria'}</button>{signedResult&&<><p>Referência: {signedResult.month} · {signedResult.total} contratos analisados · {signedResult.items.length} sinalizados · {signedResult.skipped} registros ativos sem dados válidos.</p><button type="button" className="primary-button" onClick={()=>{const url=URL.createObjectURL(signedResult.blob);const a=document.createElement('a');a.href=url;a.download='contratos_assinados_auditados.xlsx';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}}><FileDown size={16}/> Baixar planilha auditada</button><div className="audit-table-wrap"><table className="audit-table"><thead><tr><th>Cliente</th><th>Instalação</th><th>UC</th><th>Dias úteis</th></tr></thead><tbody>{signedResult.items.map(x=><tr key={x.row}><td>{x.client}</td><td>{x.installation}</td><td>{x.uc}</td><td>{x.days}</td></tr>)}</tbody></table></div></>}</section>}
             {auditTab==='invoices' && <section className="panel audit-panel">
               <div className="panel-heading"><div><h2>Fatura não gerada</h2><p>Anexe a planilha de faturamento para conferir continuidade nas três referências mais recentes.</p></div><span className="soft-tag">AUDITORIA POR INSTALAÇÃO + UC</span></div>
               <div className="audit-security-note"><ShieldCheck size={18}/><span><strong>Processamento protegido</strong>O arquivo é lido e auditado no seu próprio navegador. Ele não é enviado ao Watt-Wise, ao Supabase nem armazenado na conta.</span></div>
