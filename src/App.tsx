@@ -302,7 +302,7 @@ export default function App() {
   const [signedContracts,setSignedContracts]=useState<File|null>(null)
   const [signedInvoices,setSignedInvoices]=useState<File|null>(null)
   const [signedBusy,setSignedBusy]=useState(false)
-  const [signedResult,setSignedResult]=useState<{month:string;total:number;skipped:number;items:{row:number;client:string;installation:string;uc:string;days:number}[];blob:Blob}|null>(null)
+  const [signedResult,setSignedResult]=useState<{month:string;total:number;skipped:number;items:{row:number;client:string;installation:string;uc:string;days:number}[];wrong:{row:number;client:string;installation:string;uc:string;injection:number}[];invoiceBlob:Blob;blob:Blob}|null>(null)
   const [contractAuditBusy, setContractAuditBusy] = useState(false)
   const [contractListFile, setContractListFile] = useState<File|null>(null)
   const [invoiceListFile, setInvoiceListFile] = useState<File|null>(null)
@@ -896,7 +896,7 @@ export default function App() {
       if (conflictingClients > 0) warnings.push(conflictingClients + ' combinação(ões) instalação + UC aparecem associadas a mais de um nome de cliente.')
       if (records.length > 50000) warnings.push('Arquivo grande: foram processados mais de 50 mil registros. Confira se o resultado corresponde ao esperado.')
       const missingPairs = new Set(missing.map(item => item.installation + '|' + item.uc))
-      const rowColors = new Map<number, 'orange' | 'yellow'>()
+      const rowColors = new Map<number, 'orange' | 'yellow' | 'red'>()
       for (const record of records) {
         const pairKey = record.installation + '|' + record.uc
         if (marked.has(pairKey)) rowColors.set(record.rowNumber, 'orange')
@@ -1024,7 +1024,7 @@ export default function App() {
     if (!sheets.length) throw new Error('O arquivo não contém abas de dados reconhecidas.')
     return sheets
   }
-  async function buildAuditedXlsx(file: File, targetSheetName: string, rowColors: Map<number, 'orange' | 'yellow'>): Promise<Blob> {
+  async function buildAuditedXlsx(file: File, targetSheetName: string, rowColors: Map<number, 'orange' | 'yellow' | 'red'>): Promise<Blob> {
     const zip = await JSZip.loadAsync(await file.arrayBuffer())
     const readXml = async (path: string) => {
       const entry = zip.file(path)
@@ -1056,9 +1056,10 @@ export default function App() {
     if (!fills || !cellXfs) throw new Error('A estrutura de estilos do XLSX não é compatível com a marcação segura.')
     const ns = stylesDoc.documentElement.namespaceURI || 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
     const make = (name: string) => stylesDoc.createElementNS(ns, name)
-    const fillIds: Record<'orange' | 'yellow', number> = {
+    const fillIds: Record<'orange' | 'yellow' | 'red', number> = {
       orange: fills.children.length,
-      yellow: fills.children.length + 1
+      yellow: fills.children.length + 1,
+      red: fills.children.length + 2
     }
     const addFill = (rgb: string) => {
       const fill = make('fill'), pattern = make('patternFill')
@@ -1067,9 +1068,9 @@ export default function App() {
       const bg = make('bgColor'); bg.setAttribute('indexed', '64')
       pattern.appendChild(fg); pattern.appendChild(bg); fill.appendChild(pattern); fills.appendChild(fill)
     }
-    addFill('FFFFD08A'); addFill('FFFFFF00')
+    addFill('FFFFD08A'); addFill('FFFFFF00'); addFill('FFFF6666')
     const styleMap = new Map<string, number>()
-    const styleFor = (baseStyle: number, color: 'orange' | 'yellow') => {
+    const styleFor = (baseStyle: number, color: 'orange' | 'yellow' | 'red') => {
       const key = baseStyle + ':' + color
       const cached = styleMap.get(key)
       if (cached !== undefined) return cached
@@ -1096,7 +1097,7 @@ export default function App() {
         changedCells++
       }
     }
-    if (!changedCells) throw new Error('Nenhuma célula existente foi encontrada nas linhas que deveriam receber marcação. O arquivo original foi mantido.')
+    if (rowColors.size && !changedCells) throw new Error('Nenhuma célula existente foi encontrada nas linhas que deveriam receber marcação. O arquivo original foi mantido.')
     fills.setAttribute('count', String(fills.children.length))
     cellXfs.setAttribute('count', String(cellXfs.children.length))
     const serializer = new XMLSerializer()
@@ -1190,16 +1191,19 @@ export default function App() {
         throw new Error('Colunas não encontradas: '+names.join(', '))
       }
       const c=locate(contracts,['Número instalação','Nº unidade consumidora','Titular conta','Situação Contrato','Data de assinatura'])
-      const f=locate(invoices,['Instalação','Unid. Consumidora','Mês Referencia','Status da Fatura','Geração de Faturas','Status de Boleto Gerado'])
+      const f=locate(invoices,['Instalação','Unid. Consumidora','Mês Referencia','Status da Fatura','Geração de Faturas','Status de Boleto Gerado','Inj. Operadora Errada','Cliente'])
       const now=new Date(), end=Date.UTC(now.getFullYear(),now.getMonth(),now.getDate()), ref=now.getFullYear()*12+now.getMonth()-1
-      const billed=new Set<string>(); let referenceRows=0
+      const wrong:{row:number;client:string;installation:string;uc:string;injection:number}[]=[]; const wrongKeys=new Set<string>(); const billed=new Set<string>(); let referenceRows=0
       for(const row of f.sheet.rows){
         if(row.number<=f.header) continue
-        const [a,b,m,status,generation,boleto]=f.cols.map(i=>row.cells.get(i)||'')
+        const [a,b,m,status,generation,boleto,rawInjection,client]=f.cols.map(i=>row.cells.get(i)||'')
         if(parseAuditMonth(m)!==ref) continue
         const inst=normalizeContractAuditKey(a),uc=normalizeContractAuditKey(b)
         if(!inst||!uc) continue
         referenceRows++
+        const raw=rawInjection.trim().replace(/\s/g,'')
+        const injection=Number(raw.includes(',')?raw.replace(/\./g,'').replace(',','.'):raw)
+        if(normalizeAuditText(status).includes('cancelad')&&Number.isFinite(injection)&&injection>0){wrong.push({row:row.number,client,installation:inst,uc,injection});wrongKeys.add(inst+'|'+uc)}
         if(normalizeAuditText(status).includes('cancelad')||(normalizeAuditText(generation)==='ativo'&&normalizeAuditText(boleto)==='sucesso')) billed.add(inst+'|'+uc)
       }
       if(!referenceRows) throw new Error('Nenhum registro válido na referência '+auditMonthLabel(ref)+'. Confira a planilha de faturas.')
@@ -1222,8 +1226,11 @@ export default function App() {
         for(let t=start+86400000;t<=end;t+=86400000){const day=new Date(t).getUTCDay();if(day!==0&&day!==6)days++}
         if(days>=60&&!billed.has(installation+'|'+uc))items.push({row:row.number,client,installation,uc,days})
       }
-      const blob=await buildAuditedXlsx(signedContracts,c.sheet.name,new Map<number,'yellow'>(items.map(x=>[x.row,'yellow'])))
-      setSignedResult({month:auditMonthLabel(ref),total,skipped,items,blob})
+      const colors=new Map<number,'yellow'|'red'>(items.map(x=>[x.row,'yellow']))
+      for(const row of c.sheet.rows){if(row.number<=c.header)continue;const [a,b]=c.cols.map(i=>row.cells.get(i)||'');if(wrongKeys.has(normalizeContractAuditKey(a)+'|'+normalizeContractAuditKey(b)))colors.set(row.number,'red')}
+      const blob=colors.size?await buildAuditedXlsx(signedContracts,c.sheet.name,colors):signedContracts
+      const invoiceBlob=wrong.length?await buildAuditedXlsx(signedInvoices,f.sheet.name,new Map<number,'red'>(wrong.map(x=>[x.row,'red']))):signedInvoices
+      setSignedResult({month:auditMonthLabel(ref),total,skipped,items,wrong,invoiceBlob,blob})
     }catch(e){setError(e instanceof Error?e.message:'Falha na auditoria de contratos assinados.')}finally{setSignedBusy(false)}
   }
   async function exportContractAudit() {
@@ -1775,7 +1782,7 @@ export default function App() {
               <button type="button" role="tab" aria-selected={auditTab==='contracts'} className={auditTab==='contracts'?'audit-tab active':'audit-tab'} onClick={()=>setAuditTab('contracts')}><FileSpreadsheet size={16}/> Contratos + Faturas não geradas</button>
               <button type="button" role="tab" aria-selected={auditTab==='signed'} className={auditTab==='signed'?'audit-tab active':'audit-tab'} onClick={()=>setAuditTab('signed')}><FileSpreadsheet size={16}/> Contratos Assinados</button>
             </div>
-            {auditTab==='signed' && <section className="panel audit-panel"><div className="panel-heading"><div><h2>Contratos Assinados</h2><p>Contratos ativos com 60 dias úteis ou mais sem fatura na referência anterior.</p></div></div><div className="audit-security-note"><ShieldCheck size={18}/> Processamento local no navegador.</div><div className="contract-audit-upload-grid"><label className="audit-upload"><Upload size={22}/><strong>Planilha de contratos</strong><span>{signedContracts?.name||'.xlsx até 10 MB'}</span><input type="file" accept=".xlsx" disabled={signedBusy} onChange={e=>{setSignedContracts(e.target.files?.[0]??null);setSignedResult(null)}}/></label><label className="audit-upload"><Upload size={22}/><strong>Planilha de faturas</strong><span>{signedInvoices?.name||'.xlsx até 10 MB'}</span><input type="file" accept=".xlsx" disabled={signedBusy} onChange={e=>{setSignedInvoices(e.target.files?.[0]??null);setSignedResult(null)}}/></label></div><p className="audit-footnote">Dias úteis: segunda a sexta, sem desconto de feriados. Faturas canceladas contam como existentes.</p><button type="button" className="primary-button" disabled={signedBusy||!signedContracts||!signedInvoices} onClick={()=>void auditSignedContracts()}>{signedBusy?'Analisando...':'Realizar auditoria'}</button>{signedResult&&<><p>Referência: {signedResult.month} · {signedResult.total} contratos analisados · {signedResult.items.length} sinalizados · {signedResult.skipped} registros ativos sem dados válidos.</p><button type="button" className="primary-button" onClick={()=>{const url=URL.createObjectURL(signedResult.blob);const a=document.createElement('a');a.href=url;a.download='contratos_assinados_auditados.xlsx';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}}><FileDown size={16}/> Baixar planilha auditada</button><div className="audit-table-wrap"><table className="audit-table"><thead><tr><th>Cliente</th><th>Instalação</th><th>UC</th><th>Dias úteis</th></tr></thead><tbody>{signedResult.items.map(x=><tr key={x.row}><td>{x.client}</td><td>{x.installation}</td><td>{x.uc}</td><td>{x.days}</td></tr>)}</tbody></table></div></>}</section>}
+            {auditTab==='signed' && <section className="panel audit-panel"><div className="panel-heading"><div><h2>Contratos Assinados</h2><p>Contratos ativos com 60 dias úteis ou mais sem fatura na referência anterior.</p></div></div><div className="audit-security-note"><ShieldCheck size={18}/> Processamento local no navegador.</div><div className="contract-audit-upload-grid"><label className="audit-upload"><Upload size={22}/><strong>Planilha de contratos</strong><span>{signedContracts?.name||'.xlsx até 10 MB'}</span><input type="file" accept=".xlsx" disabled={signedBusy} onChange={e=>{setSignedContracts(e.target.files?.[0]??null);setSignedResult(null)}}/></label><label className="audit-upload"><Upload size={22}/><strong>Planilha de faturas</strong><span>{signedInvoices?.name||'.xlsx até 10 MB'}</span><input type="file" accept=".xlsx" disabled={signedBusy} onChange={e=>{setSignedInvoices(e.target.files?.[0]??null);setSignedResult(null)}}/></label></div><p className="audit-footnote">Dias úteis: segunda a sexta, sem desconto de feriados. Faturas canceladas contam como existentes. Injeção errada superior a zero em fatura cancelada: vermelho, independentemente do prazo.</p><button type="button" className="primary-button" disabled={signedBusy||!signedContracts||!signedInvoices} onClick={()=>void auditSignedContracts()}>{signedBusy?'Analisando...':'Realizar auditoria'}</button>{signedResult&&<><p>Referência: {signedResult.month} · {signedResult.total} contratos analisados · {signedResult.items.length} sinalizados · {signedResult.skipped} registros ativos sem dados válidos.</p><button type="button" className="primary-button" onClick={()=>{const url=URL.createObjectURL(signedResult.blob);const a=document.createElement('a');a.href=url;a.download='contratos_assinados_auditados.xlsx';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}}><FileDown size={16}/> Baixar planilha auditada</button><div className="audit-table-wrap"><table className="audit-table"><thead><tr><th>Cliente</th><th>Instalação</th><th>UC</th><th>Dias úteis</th></tr></thead><tbody>{signedResult.items.map(x=><tr key={x.row}><td>{x.client}</td><td>{x.installation}</td><td>{x.uc}</td><td>{x.days}</td></tr>)}</tbody></table></div><h3>Faturas canceladas com injeção errada ({signedResult.wrong.length})</h3><button type="button" className="secondary-button" onClick={()=>{const url=URL.createObjectURL(signedResult.invoiceBlob);const a=document.createElement('a');a.href=url;a.download='faturas_injecao_auditadas.xlsx';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}}><FileDown size={16}/> Baixar faturas auditadas</button><div className="audit-table-wrap"><table className="audit-table"><thead><tr><th>Cliente</th><th>Instalação</th><th>UC</th><th>Injeção errada</th><th>Motivo</th></tr></thead><tbody>{signedResult.wrong.map(x=><tr key={x.row} style={{background:'#ffcccc',color:'#7f1d1d'}}><td>{x.client}</td><td>{x.installation}</td><td>{x.uc}</td><td>{x.injection.toLocaleString('pt-BR')}</td><td>Fatura cancelada com injeção errada</td></tr>)}</tbody></table></div></>}</section>}
             {auditTab==='invoices' && <section className="panel audit-panel">
               <div className="panel-heading"><div><h2>Fatura não gerada</h2><p>Anexe a planilha de faturamento para conferir continuidade nas três referências mais recentes.</p></div><span className="soft-tag">AUDITORIA POR INSTALAÇÃO + UC</span></div>
               <div className="audit-security-note"><ShieldCheck size={18}/><span><strong>Processamento protegido</strong>O arquivo é lido e auditado no seu próprio navegador. Ele não é enviado ao Watt-Wise, ao Supabase nem armazenado na conta.</span></div>
